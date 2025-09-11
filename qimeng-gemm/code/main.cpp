@@ -77,6 +77,7 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t i
     float *in1 = new float[m * k];
     float *in2 = new float[k * n];
     float *out_gpu = new float[m * n];
+    float *out_cpu = new float[m * n];
 
     for (uint32_t i = 0; i < m * k; i++) {
         in1[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
@@ -100,9 +101,14 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t i
     hipEventDestroy(end);
     hipStreamDestroy(stream);
 
+    gemmCpu(in1, in2, out_cpu, m, n, k);
+    uint32_t error_count = compareMatrix1d(out_cpu, out_gpu, m * n);
+    std::cout << "Error count: " << error_count << std::endl;
+
     delete[] in1;
     delete[] in2;
     delete[] out_gpu;
+    delete[] out_cpu;
 
     // Return average time per iteration
     return elapsed_ms / iterations;
