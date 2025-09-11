@@ -35,6 +35,6 @@ void gemm(const float* A, const float* B, float* C, int m, int n, int k) {
     HIP_ASSERT(hipMemcpy(C, d_C, m * n * sizeof(float), hipMemcpyDeviceToHost));
 
     HIP_ASSERT(hipFree(d_A));
-    HIP_ASSERT(hipFree(d_A));
-    HIP_ASSERT(hipFree(d_A));
+    HIP_ASSERT(hipFree(d_B));
+    HIP_ASSERT(hipFree(d_C));
 }
