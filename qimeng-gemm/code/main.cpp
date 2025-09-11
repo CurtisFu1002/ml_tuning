@@ -66,13 +66,13 @@ uint32_t testGemm(const uint32_t m, const uint32_t n, const uint32_t k) {
     return error_count;
 }
 
-float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k) {
+float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t iterations = 10) {
     hipEvent_t start, end;
     hipEventCreate(&start);
     hipEventCreate(&end);
     hipStream_t stream;
     hipStreamCreate(&stream);
-    float elapsed_ms = 0.0;   // unit: ms
+    float elapsed_ms = 0.0f;
 
     float *in1 = new float[m * k];
     float *in2 = new float[k * n];
@@ -85,8 +85,13 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k) {
         in2[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     }
 
-    hipEventRecord(start, stream);
+    // Warm-up
     gemm(in1, in2, out_gpu, m, n, k);
+
+    hipEventRecord(start, stream);
+    for (uint32_t i = 0; i < iterations; ++i) {
+        gemm(in1, in2, out_gpu, m, n, k);
+    }
     hipEventRecord(end, stream);
     hipEventSynchronize(end);
     hipEventElapsedTime(&elapsed_ms, start, end);
@@ -98,7 +103,9 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k) {
     delete[] in1;
     delete[] in2;
     delete[] out_gpu;
-    return elapsed_ms;
+
+    // Return average time per iteration
+    return elapsed_ms / iterations;
 }
 
 int main(int argc, char* argv[]) {
