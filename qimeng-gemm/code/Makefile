@@ -4,11 +4,13 @@ TARGET := gemm
 CXX := hipcc
 CXXFLAGS := -O0 -std=c++11
 
-all:
-	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
+all: $(TARGET)
 
-run: all
-	./$(TARGET)
+$(TARGET): $(SRC)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
+test bench: $(TARGET)
+	./$< $@
 
 clean:
 	@$(RM) -v $(TARGET)
