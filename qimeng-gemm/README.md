@@ -4,26 +4,32 @@
 
 Install Ollama in Docker container.
 
-```
+```shell
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-Serve Ollama in the background (e.g. `tmux`)
+Serve Ollama in the background (e.g. `tmux`, `nohup`)
 
-```
-ollama serve
+```shell
+# with tmux
+tmux new -ds ollama 'ollama serve'
+
+# with nohup
+nohup ollama serve &> /tmp/ollama.log &
 ```
 
 Download model in another session, take DeepSeek-Coder-V2-13B for example.
 
-```
+```shell
 ollama pull deepseek-coder-v2:16b
 ```
 
-Read/write files
+Install dependent Python packages
 
-```
-ollama run deepseek-coder-v2:16b "Summarize the content of this file in 10 words." < input.md > output.md
+```shell
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Meta-Prompts Template
@@ -61,7 +67,7 @@ The instantiation describes the process from the general meta-prompts to the pro
 
 ## Auto-Tuning
 
-The auto-tuning algorithm in the paper is shown below:
+The auto-tuning algorithm in the paper is shown below, and is implemented in [`src/main.py`](src/main.py).
 
 ```
 Input: a set of meta-prompts p_A, beam width k, max number of iterations T
@@ -86,4 +92,25 @@ subroutine generate_gemm_kernel {
     }
     return the code in C with highest performance
 }
+```
+
+You can start the auto-tuning workflow by executing:
+
+```shell
+python3 src/main.py \
+    --iter 1 \
+    --meta meta-prompts/tiling.md \
+    --input code/gemm.cpp \
+    --output code/generated \
+    --build code/build
+```
+
+For more information, check with `--help`.
+
+To run testing or benchmark for a generated kernel, use `make` with the `KERNEL` variable specified as the file path. (default is `gemm.cpp`)
+
+```shell
+cd code
+make test KERNEL=generated/gemm-0-0.cpp
+make bench KERNEL=generated/gemm-0-0.cpp
 ```
