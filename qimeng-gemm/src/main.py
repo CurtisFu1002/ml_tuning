@@ -1,4 +1,5 @@
 import argparse
+from collections import deque
 from pathlib import Path
 import subprocess
 
@@ -87,11 +88,11 @@ def main():
     result = run_benchmark(input_code, build_dir)
     print(result.stdout)
 
-    unvisited = [input_code.read_text()]
+    unvisited = deque([input_code.read_text()])
     visited = set()
 
     for i in range(args.iter):
-        code = unvisited.pop(0)
+        code = unvisited.popleft()
         visited.add(code)
 
         resp_list = get_llm_response(args.model, code, meta_prompt.read_text())
