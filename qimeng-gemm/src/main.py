@@ -51,9 +51,9 @@ GEMM implementation:
 {input_code}
 ```
 
-Return ONLY the C++/HIP code for each variants, NO Markdown formatting.
+Return ONLY the C++/HIP code for each variant, NO Markdown formatting.
 Remember to add the necessary header `#include "gemm.hpp"`!
-Each variant is seperated by a line of '---' characters.
+Each variant is separated by a line of '---' characters.
 """
 
 
