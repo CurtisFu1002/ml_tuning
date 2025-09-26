@@ -104,7 +104,8 @@ def main():
 
             output_path = f"{out_dir}/{Path(args.input).stem}-{i}-{idx}.cpp"
             print(f"Writing to {output_path}")
-            print(code, file=open(output_path, "w"))
+            with open(output_path, "w") as f:
+                print(code, file=f)
 
             result = run_benchmark(output_path, build_dir)
             print(result.stdout)
