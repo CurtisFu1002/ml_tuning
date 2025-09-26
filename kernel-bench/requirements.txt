@@ -1,0 +1,15 @@
+anthropic
+modal
+numpy<1.23,>=1.18
+openai
+packaging
+pydra_config
+tqdm
+datasets
+transformers
+google-generativeai
+together
+pytest
+ninja
+archon-ai
+einops
