@@ -17,7 +17,7 @@ void gemmCpu(const float* A, const float* B, float* C, int m, int n, int k) {
             for (uint32_t ki = 0; ki < k; ki++) {
                 psum += A[mi * k + ki] * B[ki * n + ni];
             }
-            C[mi * m + ni] = psum;
+            C[mi * n + ni] = psum;
         }
     }
 }
