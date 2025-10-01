@@ -13,7 +13,7 @@ git -C original apply ../patches/add-ollama-server.patch
 
 ### Launch Docker Container
 
-Since the lastest stable version of PyTorch has not yet supported ROCm 7.0, we have to use a nightly version (v2.10) instead. There is a pre-built Docker image [`rocm/pytorch-nightly`](https://hub.docker.com/r/rocm/pytorch-nightly) on Docker Hub.
+Since the latest stable version of PyTorch has not yet supported ROCm 7.0, we have to use a nightly version (v2.10) instead. There is a pre-built Docker image [`rocm/pytorch-nightly`](https://hub.docker.com/r/rocm/pytorch-nightly) on Docker Hub.
 
 ```shell
 cont_name=$(whoami)-kernelbench
