@@ -1,1 +1,18 @@
 /script/*.jpg
+
+# Python Environments
+.env
+.venv
+env/
+venv/
+
+# Python cache
+__pycache__/
+
+# Build artifacts
+*.o
+*.exe
+*.out
+*.so
+*.a
+*.d
