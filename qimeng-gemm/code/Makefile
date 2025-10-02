@@ -19,7 +19,7 @@ $(dir $(EXE)):
 	mkdir -p $@
 
 test bench: $(EXE)
-	$< $@
+	$< $@ $(ITERS) $(WARMUP)
 
 clean:
 	@$(RM) -rv $(BUILD_DIR)

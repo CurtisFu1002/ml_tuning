@@ -98,7 +98,6 @@ You can start the auto-tuning workflow by executing:
 
 ```shell
 python3 src/main.py \
-    --iter 1 \
     --meta meta-prompts/tiling.md \
     --input code/gemm.cpp \
     --output code/generated \
@@ -113,4 +112,11 @@ To run testing or benchmark for a generated kernel, use `make` with the `KERNEL`
 cd code
 make test KERNEL=generated/gemm-0-0.cpp
 make bench KERNEL=generated/gemm-0-0.cpp
+```
+
+You can also specify the number of timing iterations and warmup iterations using `ITERS` and `WARMUP` variables. By default, `ITERS` is 30, and `WARMUP` is 1/3 of `ITERS`.
+
+```shell
+cd code
+make bench ITERS=30 WARMUP=10
 ```

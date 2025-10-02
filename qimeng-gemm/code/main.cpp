@@ -66,7 +66,7 @@ uint32_t testGemm(const uint32_t m, const uint32_t n, const uint32_t k) {
     return error_count;
 }
 
-float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t iterations = 10) {
+float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, const uint32_t iters, const uint32_t warmup) {
     hipEvent_t start, end;
     hipEventCreate(&start);
     hipEventCreate(&end);
@@ -86,11 +86,16 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t i
         in2[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
     }
 
+    std::cout << "Running GEMM benchmark with " << iters << " timing iterations and " << warmup << " warmup iterations"
+              << std::endl;
+
     // Warm-up
-    gemm(in1, in2, out_gpu, m, n, k);
+    for (uint32_t i = 0; i < warmup; ++i) {
+        gemm(in1, in2, out_gpu, m, n, k);
+    }
 
     hipEventRecord(start, stream);
-    for (uint32_t i = 0; i < iterations; ++i) {
+    for (uint32_t i = 0; i < iters; ++i) {
         gemm(in1, in2, out_gpu, m, n, k);
     }
     hipEventRecord(end, stream);
@@ -111,12 +116,12 @@ float benchGemm(const uint32_t m, const uint32_t n, const uint32_t k, uint32_t i
     delete[] out_cpu;
 
     // Return average time per iteration
-    return elapsed_ms / iterations;
+    return elapsed_ms / iters;
 }
 
 int main(int argc, char* argv[]) {
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <test|bench>" << std::endl;
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <test|bench> [TIMING_ITERS:int] [WARMUP_ITERS:int]" << std::endl;
         exit(EXIT_FAILURE);
     }
 
@@ -129,7 +134,9 @@ int main(int argc, char* argv[]) {
             std::cout << "Test failed! Error count: " << error_count << std::endl;
         }
     } else if (mode == "bench") {
-        float elapsed_ms = benchGemm(M, N, K);
+        const uint32_t iters = (argc > 2) ? std::stoi(argv[2]) : 30;
+        const uint32_t warmup = (argc > 3) ? std::stoi(argv[3]) : iters / 3;
+        float elapsed_ms = benchGemm(M, N, K, iters, warmup);
         std::cout << "Elapsed time: " << elapsed_ms << " ms" << std::endl;
     } else {
         std::cerr << "Invalid mode: " << mode << std::endl;

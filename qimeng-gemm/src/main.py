@@ -23,7 +23,10 @@ def parse_args() -> argparse.Namespace:
         "--meta", type=str, default="meta-prompts/tiling.md", help="meta prompt file"
     )
     parser.add_argument(
-        "--iter", type=int, default=1, help="number of iterations to run"
+        "--iters", type=int, default=30, help="number of timing iterations to run"
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=10, help="number of warmup iterations before timing"
     )
     parser.add_argument(
         "--output",
@@ -65,10 +68,19 @@ def get_llm_response(model: str, input_code: str, meta_prompt: str) -> list[str]
     return resp_list
 
 
-def run_benchmark(kernel_source: Path, build_dir: Path) -> subprocess.CompletedProcess:
+def run_benchmark(
+        kernel_source: Path, build_dir: Path, iters: int, warmup: int
+) -> subprocess.CompletedProcess:
     topdir = Path(__file__).resolve().parent.parent
     result = subprocess.run(
-        ["make", f"KERNEL={kernel_source}", f"BUILD_DIR={build_dir}", "bench"],
+        [
+            "make",
+            "bench",
+            f"KERNEL={kernel_source}",
+            f"BUILD_DIR={build_dir}",
+            f"ITERS={iters}",
+            f"WARMUP={warmup}",
+        ],
         cwd=f"{topdir}/code",
         check=True,
         capture_output=True,
@@ -108,7 +120,7 @@ def main():
             with open(output_path, "w") as f:
                 print(code, file=f)
 
-            result = run_benchmark(output_path, build_dir)
+            result = run_benchmark(output_path, build_dir, args.iters, args.warmup)
             print(result.stdout)
 
 
