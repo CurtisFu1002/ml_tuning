@@ -100,22 +100,23 @@ Download model in another session, take [Llama3.1-8B](https://ollama.com/library
 ollama pull llama3.1:8b
 ```
 
-Install dependencies.
+Navigate to the project root (`ml_tuning/`), install this project as a package with its dependencies.
 
-```
-pip install -r requirements.txt
+```shell
+cd ..  # ml_tuning
+pip install -e .
 ```
 
 ## CLI Usage
 
-Run `main.py` with `--help` option to see the usage:
+Run `confgen` with `--help` option to see the usage:
 
 ```shell
-python3 main.py --help
+confgen --help
 ```
 
 Get the advice for modifying the kernel config from LLM:
 
 ```shell
-python3 main.py -i /path/to/config.yaml -o /path/to/advice.md
+confgen -i /path/to/config.yaml -o /path/to/advice.md
 ```

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ml-tuning"
+version = "0.1.0.dev0"
+description = "A repo to store all code related to machine learning based tuning, which aims to provide a faster tuning process to find best kernel parameters for GEMM."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ollama>=0.6.0",
+    "pyyaml>=6.0.3",
+]
+
+[project.scripts]
+confgen = "config_generator.main:main"
+
+[tool.hatch.build]
+packages = ["config_generator"]

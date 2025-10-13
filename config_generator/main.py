@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from ollama import chat
 
-from prompts.gpu_spec import GPU_SPEC_INFO
+from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
 
 
 def parse_args():
