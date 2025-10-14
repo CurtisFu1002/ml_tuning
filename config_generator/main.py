@@ -55,24 +55,29 @@ def get_llm_response(model_name: str, prompt: str) -> str:
 
 def get_user_prompt(config: str, gpu_spec: str) -> str:
     prompt = f"""
-    You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
+You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
 
-    You are trying to tune a GEMM kernel using Tensile tuning framework on AMD's MI210 (gfx90a) GPU.
+You are trying to tune a GEMM kernel using Tensile tuning framework on AMD's MI210 (gfx90a) GPU.
 
-    The input config yaml is:
+The input config yaml is:
 
-    ```yaml
-    {config}
-    ```
+```python
+{config}
+```
 
-    and the GPU spec is:
+and the GPU spec is:
 
-    ```json
-    {gpu_spec}
-    ```
+```python
+{gpu_spec}
+```
 
-    Please tell me how to modify the config to the better performance.
-    """
+Please tell me how to modify the config to the better performance with the following structure:
+
+1. Initial observations
+2. Potential optimization
+3. Expected performance improvement
+4. Modified config in YAML format surrounded by triple backticks (```yaml)
+"""
     return prompt
 
 
@@ -89,7 +94,8 @@ def main():
 
     if args.output_file not in ["stdout", "-", "", None]:
         with open(Path(args.output_file), "w") as f:
-            f.write(res)
+            f.write(f"## Prompt\n{prompt}\n")
+            f.write(f"## Response\n\n{res}\n")
     else:
         print(res)
 
