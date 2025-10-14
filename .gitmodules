@@ -1,0 +1,3 @@
+[submodule "kernel-bench/original"]
+	path = kernel-bench/original
+	url = git@github.com:ScalingIntelligence/KernelBench.git

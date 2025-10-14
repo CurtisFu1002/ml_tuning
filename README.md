@@ -5,3 +5,4 @@ A repo to store all code related to machine learning based tuning, which aims to
 ## Experiments and Prototypes
 
 - [QiMeng-GEMM](./qimeng-gemm/README.md)
+- [KernelBench](./kernel-bench/README.md)
