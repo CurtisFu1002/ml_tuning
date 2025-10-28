@@ -8,9 +8,9 @@ In the traditional Tensile/TensileLite tuning process, users need to provide a c
 
 ![Tensile tuning pass](docs/images/tensile_tuning_pass.png)
 
-Tensile implements a quite complicated algorithm to find the optimal kernel configuration from the search space for every specific GEMM size. In order to not to miss the true optimal kernel, we have to specify a quite large number of candidates for variable fork parameters. This makes the tunning workflow very time-consuming.
+Tensile implements exhaustive benchmarking to find the optimal kernel configuration from the search space for every specific GEMM size. In order not to miss the true optimal kernel, we have to specify a large number of candidates for variable fork parameters. This makes the tuning workflow very time-consuming.
 
-Tensile v2 provides users the flexibility to manually interrupt the multiplicative series of fork parameters with addtions to dramatically reduce the size of search space. For example:
+Tensile v2 provides users the flexibility to manually interrupt the multiplicative series of fork parameters with additions to dramatically reduce the size of the search space. For example:
 
 - `(8 WorkGroups) * (12 ThreadTiles) + (4 NumLoadsCoalesedAs)` is supported by only v2
 - `(8 WorkGroups) * (12 ThreadTiles) * (4 NumLoadsCoalesedAs)` is supported by both v1 and v2
@@ -115,8 +115,30 @@ Run `confgen` with `--help` option to see the usage:
 confgen --help
 ```
 
-Get the advice for modifying the kernel config from LLM:
+### Generate Logic YAML with LLM
+
+You can see the usage of `generate` subcommand via:
 
 ```shell
-confgen -i /path/to/config.yaml -o /path/to/advice.md
+confgen generate --help
+```
+
+For example, give the path of config and logic file, and specify the filename of output logic. (Make sure to have your Ollama server running)
+
+```shell
+confgen generate <config_file> <logic_file> <output_file>
+```
+
+### Run Tensile Tuning
+
+The `tensile` subcommand calls the `Tensile.sh` to run the auto tuning. Please add the build directory of TensileLite to `PATH` environment variable or create an alias `Tensile.sh` that points to the absolute path of `Tensile.sh`.
+
+```shell
+confgen tensile --help
+```
+
+The usage of this subcommand is completely the same as `Tensile.sh`. For example:
+
+```shell
+confgen tensile <config_file> [config_file ...] <output_dir>
 ```
