@@ -6,7 +6,7 @@ This experiment aims to integrate LLM into the Tensile/TensileLite Tuning workfl
 
 In the traditional Tensile/TensileLite tuning process, users need to provide a config yaml following the [Tensile Benchmark Protocol](https://rocm.docs.amd.com/projects/Tensile/en/latest/src/conceptual/benchmarking.html) to construct a search space of the combination of candidate kernel parameters (`ForkParameters`) for all the specified problem sizes.
 
-![Tensile tuning pass](docs/images/tensile_tuning_pass.png)
+![Tensile tuning pass](../docs/images/tensile_tuning_pass.png)
 
 Tensile implements exhaustive benchmarking to find the optimal kernel configuration from the search space for every specific GEMM size. In order not to miss the true optimal kernel, we have to specify a large number of candidates for variable fork parameters. This makes the tuning workflow very time-consuming.
 
