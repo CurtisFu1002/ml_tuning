@@ -17,9 +17,17 @@ Tensile v2 provides users the flexibility to manually interrupt the multiplicati
 
 However, reducing the redundant forking with this new feature while preserving the optimal solution highly depends on experts' knowledge.
 
-## Objective
+## Objectives
 
-Therefore, our goal is to design a framework that incorporates LLM to smartly generate the kernel configurations, so that we can only feed a relatively smaller number of kernel configurations into Tensile, and hence speedup the tuning workflow.
+Our goal is to build a framework that integrates an LLM into the Tensile/TensileLite tuning workflow to automatically generate improved kernel tuning configurations. This reduces manual effort and accelerates the search for optimal GEMM kernels on AMD GPUs.
+
+### Stage 1: Search Space Pruning (Working in Progress)
+
+Starting from a broad set of candidate kernel parameters, the LLM analyzes the configuration and profiling/benchmark data to remove unnecessary forks while preserving the true optimal kernel as a candidate. The outcome is a more compact config file that retains optimal solutions and significantly reduces TensileLite tuning time.
+
+### Stage 2: Search Space Expansion (Not Started)
+
+Starting from a limited set of candidate parameters, the LLM can recommend operations that expand the kernel-parameter search space by leveraging hardware specifications, problem details, and profiling/benchmark data. By proposing new parameter values and combinations not present in the original input, the generated configuration can introduce kernel variants that may achieve better performance than the initial candidates.
 
 ## Proposed Solution
 
@@ -71,6 +79,9 @@ Subroutine IterativeTuning:
 
 At each iteration, the LLM proposes edits to the kernel configuration to steer Tensile toward better-performing kernels. It can perform the following types of operations:
 
+- Remove a multiplicative fork parameter
+- Remove an independent fork parameter
+- Remove a fork parameter cadidate
 - Add a multiplicative fork parameter
 - Add an independent fork parameter
 - Add a fork parameter candidate
@@ -115,18 +126,31 @@ Run `confgen` with `--help` option to see the usage:
 confgen --help
 ```
 
-### Generate Logic YAML with LLM
+### Generate Modified Config YAML with LLM
 
 You can see the usage of `generate` subcommand via:
 
 ```shell
 confgen generate --help
 ```
-
-For example, give the path of config and logic file, and specify the filename of output logic. (Make sure to have your Ollama server running)
+Ensure the Ollama server is running before generating a modified config file. Then run:
 
 ```shell
-confgen generate <config_file> <logic_file> <output_file>
+confgen generate config.yaml output.md
+```
+
+To use a different model, add the `--model` option. For example:
+
+```shell
+confgen generate --model codellama:7b config.yaml output.md
+```
+
+### Generate Logic YAML with LLM
+
+To generate a logic YAML, you have to provide an additional logic file with `--logic-yaml` as the example of output format for LLM. Also, make sure the Ollama server is running before you run the command.
+
+```shell
+confgen generate --logic-yaml logic.yaml config.yaml output.md
 ```
 
 ### Run Tensile Tuning

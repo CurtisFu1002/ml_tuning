@@ -7,7 +7,6 @@ from typing_extensions import Annotated
 
 from ollama import chat
 import typer
-import yaml
 
 from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
 
@@ -61,8 +60,7 @@ def get_llm_response(model_name: str, prompt: str) -> str:
 
 
 def get_user_prompt_v1(config: str, gpu_spec: str) -> str:
-    prompt = f"""
-You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
+    prompt = f"""You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
 
 You are trying to tune a GEMM kernel using Tensile tuning framework on AMD's MI210 (gfx90a) GPU.
 
@@ -132,42 +130,61 @@ def extract_yaml(text: str) -> str | None:
 
 @app.command()
 def generate(
-    config_file: str,
-    logic_file: str,
-    output_file: str,
+    config_yaml: Annotated[
+        str,
+        typer.Argument(
+            help="the kernel parameter config file to use (YAML format)",
+        ),
+    ],
+    output_file: Annotated[
+        str,
+        typer.Argument(
+            help="the file path to write the model response to (Markdown is recommended)",
+        ),
+    ] = "stdout",
+    logic_yaml: Annotated[
+        str | None,
+        typer.Option(
+            help="the logic file example to guide LLM output format",
+        ),
+    ] = None,
     model: str = "llama3.1:8b",
+    gpu: str = "MI210",
     verbose: bool = False,
-):
+) -> None:
     """Generate a logic yaml from a kernel config for tuning a GEMM kernel using Tensile"""
 
     logging.basicConfig(level=logging.INFO if verbose else logging.WARNING)
-    logging.info(f"Config file: {config_file}")
+    logging.info(f"Config file: {config_yaml}")
     logging.info(f"Output file: {output_file}")
-    logging.info(f"Logic file: {logic_file}")
+    logging.info(f"Logic file: {logic_yaml}")
 
-    with open(Path(config_file), "r") as f:
+    with open(Path(config_yaml), "r") as f:
         config = f.read()
 
-    with open(Path(logic_file), "r") as f:
-        logic = f.read()
+    if logic_yaml is None:
+        prompt = get_user_prompt_v1(config, f"{GPU_SPEC_INFO[gpu]}")
+    else:
+        with open(Path(logic_yaml), "r") as f:
+            logic = f.read()
+        prompt = get_user_prompt_v2(config, f"{GPU_SPEC_INFO[gpu]}", logic)
 
-    # prompt = get_user_prompt_v1(config, f"{GPU_SPEC_INFO['MI210']}")
-    prompt = get_user_prompt_v2(config, f"{GPU_SPEC_INFO['MI210']}", logic)
     res = get_llm_response(model, prompt)
 
-    if output_file not in ["stdout", "-", "", None]:
-        output_path = Path(output_file)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, "w") as f:
-            f.write(f"## Prompt\n{prompt}\n")
-            f.write(f"## Response\n\n{res}\n")
-    else:
+    if output_file in ["stdout", "-", "", None]:
         print(res)
+        return
 
-    logic_yaml = extract_yaml(res)
-    with open(Path(f"{output_file}.yaml"), "w") as f:
-        f.write(logic_yaml)
-    print(logic_yaml)
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path.with_suffix(".md"), "w") as f:
+        f.write(f"## Prompt\n\n{prompt}\n")
+        f.write(f"## Response\n\n{res}\n")
+
+    output_yaml = extract_yaml(res)
+    with open(output_path.with_suffix(".yaml"), "w") as f:
+        f.write(output_yaml)
 
 
 @app.command()
@@ -178,7 +195,7 @@ def tensile(
             help="arguments passed to Tensile.sh (e.g. config_file output_path)"
         ),
     ],
-):
+) -> None:
     """Run Tensile tuning application with given config file"""
 
     cmd = ["Tensile.sh"] + args
