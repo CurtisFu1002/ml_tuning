@@ -3,12 +3,15 @@ import logging
 import re
 from pathlib import Path
 import subprocess
+from typing import Any
 from typing_extensions import Annotated
 
 from ollama import chat
 import typer
+import yaml
 
 from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
+from config_generator.prompts.format import ConfigYaml
 
 
 app = typer.Typer()
@@ -22,7 +25,7 @@ def parse_args():
     parser.add_argument(
         "--model",
         type=str,
-        default="llama3.1:8b",
+        default="gpt-oss:120b",
         help="specify the model to use from https://ollama.com/search",
     )
     parser.add_argument(
@@ -59,6 +62,19 @@ def get_llm_response(model_name: str, prompt: str) -> str:
     return resp.message.content
 
 
+def get_llm_response_parsed(model_name: str, prompt: str) -> dict[str, Any]:
+    logging.info(f"Using model: {model_name}")
+    resp = chat(
+        model=model_name,
+        messages=[
+            {"role": "user", "content": prompt},
+        ],
+        format=ConfigYaml.model_json_schema(),
+        options={"temperature": 0},
+    )
+    return ConfigYaml.model_validate_json(resp.message.content).model_dump()
+
+
 def get_user_prompt_v1(config: str, gpu_spec: str) -> str:
     prompt = f"""You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
 
@@ -81,7 +97,11 @@ Please tell me how to modify the config to the better performance with the follo
 1. Initial observations
 2. Potential optimization
 3. Expected performance improvement
-4. Modified config in YAML format surrounded by triple backticks (```yaml)
+4. Modified config in YAML format
+
+Delete the MatrixInstruction candidate options that are not valid or sub-optimal for the given GPU, and provide the modified config in YAML format.
+
+Note that the `TestParameters` and `GlobalParameters` should not be changed in the output config!
 """
     return prompt
 
@@ -148,7 +168,7 @@ def generate(
             help="the logic file example to guide LLM output format",
         ),
     ] = None,
-    model: str = "llama3.1:8b",
+    model: str = "gpt-oss:120b",
     gpu: str = "MI210",
     verbose: bool = False,
 ) -> None:
@@ -159,20 +179,21 @@ def generate(
     logging.info(f"Output file: {output_file}")
     logging.info(f"Logic file: {logic_yaml}")
 
-    with open(Path(config_yaml), "r") as f:
-        config = f.read()
+    config = Path(config_yaml).read_text()
 
     if logic_yaml is None:
         prompt = get_user_prompt_v1(config, f"{GPU_SPEC_INFO[gpu]}")
+        res: dict[str, Any] = get_llm_response_parsed(model, prompt)
+        output_yaml = yaml.safe_dump(res, sort_keys=False)
     else:
-        with open(Path(logic_yaml), "r") as f:
-            logic = f.read()
+        logic = Path(logic_yaml).read_text()
         prompt = get_user_prompt_v2(config, f"{GPU_SPEC_INFO[gpu]}", logic)
-
-    res = get_llm_response(model, prompt)
+        res: str = get_llm_response(model, prompt)
+        output_yaml = extract_yaml(res)
 
     if output_file in ["stdout", "-", "", None]:
         print(res)
+        print(type(res))
         return
 
     output_path = Path(output_file)
@@ -180,9 +201,11 @@ def generate(
 
     with open(output_path.with_suffix(".md"), "w") as f:
         f.write(f"## Prompt\n\n{prompt}\n")
-        f.write(f"## Response\n\n{res}\n")
+        if logic_yaml is None:
+            f.write(f"## Response\n\n```yaml\n{output_yaml}\n```\n")
+        else:
+            f.write(f"## Response\n\n{res}\n")
 
-    output_yaml = extract_yaml(res)
     with open(output_path.with_suffix(".yaml"), "w") as f:
         f.write(output_yaml)
 
@@ -198,7 +221,7 @@ def tensile(
 ) -> None:
     """Run Tensile tuning application with given config file"""
 
-    cmd = ["Tensile.sh"] + args
+    cmd = ["/mnt/rocm-libraries/projects/hipblaslt/build-tensile/Tensile.sh"] + args
 
     logging.info(f"Running command: {' '.join(cmd)}")
     res = subprocess.run(cmd, check=True, capture_output=True, text=True)
