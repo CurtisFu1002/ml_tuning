@@ -1,2 +1,4 @@
-ollama
-typer
+ollama>=0.6.0
+pydantic>=2.12.3
+pyyaml>=6.0.3
+typer>=0.19.2
