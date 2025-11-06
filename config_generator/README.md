@@ -81,7 +81,7 @@ At each iteration, the LLM proposes edits to the kernel configuration to steer T
 
 - Remove a multiplicative fork parameter
 - Remove an independent fork parameter
-- Remove a fork parameter cadidate
+- Remove a fork parameter candidate
 - Add a multiplicative fork parameter
 - Add an independent fork parameter
 - Add a fork parameter candidate

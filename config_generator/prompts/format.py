@@ -21,7 +21,7 @@ class GlobalParameters(BaseModel):
         2  # 0 - user wants no printing, 1 - user wants limited prints (for tuning), 2 - user wants full prints
     )
     ClientLogLevel: int = (
-        3  # Error = 0 (crash), Terse = 1(no predicator info, for tuning), Verbose = 2, Debug = 3(for deubg to see predicator)
+        3  # Error = 0 (crash), Terse = 1 (no predicate info, for tuning), Verbose = 2, Debug = 3 (for debug to see predicate)
     )
     KeepBuildTmp: bool = True
 
