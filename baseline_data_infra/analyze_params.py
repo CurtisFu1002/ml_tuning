@@ -74,7 +74,7 @@ def summarize_outliers(yaml_path, ignore_keys=None):
 
 
 if __name__ == "__main__":
-    yaml_path = "00_Final.yaml"
+    yaml_path = "00_Final_v1.yaml"
     summary_df, fixed_df = summarize_outliers(yaml_path)
 
     summary_df.to_csv("param_outlier_summary.csv", index=False)
