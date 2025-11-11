@@ -13,6 +13,7 @@ dependencies = [
     "pydantic>=2.12.3",
     "pyyaml>=6.0.3",
     "typer>=0.19.2",
+    "typing-extensions>=4.15.0",
 ]
 
 [project.scripts]
