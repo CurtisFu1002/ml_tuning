@@ -2,7 +2,6 @@
 A List of GPU Specs to include in the prompt
 """
 
-
 GPU_SPEC_INFO = {
     "MI210": {
         "GPU Architecture": "MI200 (CDNA2)",
@@ -131,7 +130,7 @@ GPU_SPEC_INFO = {
         "Maximum number of thread blocks per SM": "32",
         "Shared memory capacity per SM": "164 KB",
         "Maximum shared memory per thread block": "163 KB",
-    }
+    },
 }
 
 # Basic GPU concept definitions
