@@ -115,7 +115,7 @@ Navigate to the project root (`ml_tuning/`), install this project as a package w
 
 ```shell
 cd ..  # ml_tuning
-pip install -e .
+pip install -e . --group dev
 ```
 
 ## CLI Usage

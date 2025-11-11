@@ -27,3 +27,9 @@ packages = ["config_generator"]
 [tool.uv.sources]
 rocisa = { path = "../rocm-libraries/projects/hipblaslt/tensilelite/rocisa" }
 tensile = { path = "../rocm-libraries/projects/hipblaslt/tensilelite" }
+
+[dependency-groups]
+dev = [
+    "black==22.8.0",
+    "pre-commit>=4.3.0",
+]
