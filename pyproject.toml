@@ -12,6 +12,8 @@ dependencies = [
     "ollama>=0.6.0",
     "pydantic>=2.12.3",
     "pyyaml>=6.0.3",
+    "rocisa",
+    "tensile",
     "typer>=0.19.2",
     "typing-extensions>=4.15.0",
 ]
@@ -21,3 +23,7 @@ confgen = "config_generator.main:app"
 
 [tool.hatch.build]
 packages = ["config_generator"]
+
+[tool.uv.sources]
+rocisa = { path = "../rocm-libraries/projects/hipblaslt/tensilelite/rocisa" }
+tensile = { path = "../rocm-libraries/projects/hipblaslt/tensilelite" }

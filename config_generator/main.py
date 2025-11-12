@@ -2,13 +2,13 @@ import argparse
 import logging
 import re
 from pathlib import Path
-import subprocess
 from typing import Any
 from typing_extensions import Annotated
 
 from ollama import chat
 import typer
 import yaml
+from Tensile import Tensile
 
 from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
 from config_generator.prompts.format import ConfigYaml
@@ -210,22 +210,45 @@ def generate(
         f.write(output_yaml)
 
 
+def tensile_full_help(value: bool) -> None:
+    if value:
+        Tensile.Tensile(["--help"])
+
+
 @app.command()
 def tensile(
-    args: Annotated[
-        list[str],
-        typer.Argument(
-            help="arguments passed to Tensile.sh (e.g. config_file output_path)"
-        ),
+    config_file: Annotated[
+        str,
+        typer.Argument(help="Benchmark config.yaml file"),
     ],
+    output_path: Annotated[
+        str,
+        typer.Argument(help="Path to conduct benchmark and write output files"),
+    ],
+    prebuilt_client: Annotated[
+        str,
+        typer.Option(
+            help="Specify the full path to a pre-built tensilelite-client executable",
+        ),
+    ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
+    full_help: Annotated[
+        bool,
+        typer.Option(
+            "--full-help",
+            is_eager=True,
+            callback=tensile_full_help,
+            help="Show full help message from underlying Tensile script",
+        ),
+    ] = False,
 ) -> None:
     """Run Tensile tuning application with given config file"""
-
-    cmd = ["/mnt/rocm-libraries/projects/hipblaslt/build-tensile/Tensile.sh"] + args
-
-    logging.info(f"Running command: {' '.join(cmd)}")
-    res = subprocess.run(cmd, check=True, capture_output=True, text=True)
-    print(f"Tensile output: {res.stdout}")
+    Tensile.Tensile(
+        [
+            f"--prebuilt-client={prebuilt_client}",
+            config_file,
+            output_path,
+        ]
+    )
 
 
 if __name__ == "__main__":
