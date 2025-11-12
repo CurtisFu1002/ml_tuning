@@ -9,6 +9,11 @@ venv/
 # Python cache
 __pycache__/
 
+# Python packaging
+*.egg-info/
+dist/
+build/
+
 # Build artifacts
 *.o
 *.exe
@@ -16,3 +21,6 @@ __pycache__/
 *.so
 *.a
 *.d
+
+# Dataset
+data/
