@@ -164,5 +164,30 @@ confgen tensile --help
 The usage of this subcommand is completely the same as `Tensile.sh`. For example:
 
 ```shell
-confgen tensile <config_file> [config_file ...] <output_dir>
+confgen tensile config.yaml output/
+```
+
+### End-to-end Config Generation and Benchmarking
+
+The `autotune` command combines LLM-based config generation and Tensile benchmarking into a single workflow. View the full command options:
+
+```shell
+confgen autotune --help
+```
+
+Run autotune with default settings (gpt-oss:120b model, MI210 GPU):
+
+```shell
+confgen autotune config.yaml output/
+```
+
+This will:
+1. Generate optimized config using LLM
+2. Save modified config to `output/modified.yaml`
+3. Automatically run Tensile benchmark with the generated config
+
+Run `autotune` with a specific LLM model:
+
+```shell
+confgen autotune --model gpt-oss:120b config.yaml output/
 ```
