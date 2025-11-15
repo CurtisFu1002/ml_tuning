@@ -17,7 +17,7 @@ app = typer.Typer()
 
 def _generate_helper(
     config_text: str,
-    gpu_spec: dict[str, str],
+    gpu_spec: str,
     model_name: str,
     logic_text: str | None = None,
 ) -> tuple[str, str, str]:
@@ -65,7 +65,26 @@ def generate(
     gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
     verbose: bool = False,
 ) -> None:
-    """Generate a logic yaml from a kernel config for tuning a GEMM kernel using Tensile"""
+    """
+    Generate optimized kernel configuration using LLM.
+
+    Uses a large language model to analyze and optimize GEMM kernel parameters
+    for specific GPU architectures. The LLM generates recommendations based on
+    hardware specifications and best practices.
+
+    Two modes of operation:
+
+    - Config mode (no --logic-yaml): Generates optimized kernel config from input
+
+    - Logic mode (with --logic-yaml): Generates logic file using example format
+
+
+    Outputs (when output_file is not stdout):
+
+        - <output_file>.yaml: Generated optimized configuration
+
+        - <output_file>.md: Analysis including prompt, reasoning, and recommendations
+    """
 
     logging.basicConfig(level=logging.INFO if verbose else logging.WARNING)
     logging.info(f"Config file: {config_yaml}")
@@ -90,7 +109,9 @@ def generate(
 
     # Write output files
     output_path = Path(output_file)
-    write_output_files(output_path, prompt, response, yaml_content)
+    write_output_files(
+        output_path, prompt, response, yaml_content, is_logic=logic_text is not None
+    )
 
 
 def _tensile_full_help(value: bool) -> None:
@@ -126,7 +147,33 @@ def tensile(
         ),
     ] = False,
 ) -> None:
-    """Run Tensile tuning application with given config file"""
+    """
+    Run Tensile benchmark with the specified configuration.
+
+    This command is a wrapper around the Tensile tuning framework that benchmarks
+    GEMM kernel configurations on AMD GPUs. It measures actual performance metrics
+    to validate optimization strategies.
+
+    The benchmark tests various kernel parameters defined in the config file and
+    generates performance data, assembly code, and optimized kernel implementations.
+
+
+    Outputs (written to <output_path>):
+
+        - Benchmark results and performance metrics
+
+        - Generated kernel assembly code
+
+        - Optimized kernel library files
+
+        - Detailed timing and profiling data
+
+
+    Note:
+
+        Requires a properly configured AMD ROCm environment and compatible GPU.
+        Benchmark execution may take significant time depending on config complexity.
+    """
     Tensile.Tensile(
         [
             f"--prebuilt-client={prebuilt_client}",
@@ -159,6 +206,27 @@ def autotune(
         ),
     ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
 ) -> None:
+    """
+    Generate optimized config using LLM and run Tensile benchmark automatically.
+
+
+    This command combines the 'generate' and 'tensile' commands into a single workflow:
+
+    1. Uses LLM to generate an optimized kernel config based on GPU specifications
+
+    2. Writes the generated config and analysis to the output directory
+
+    3. Automatically runs Tensile benchmark using the generated config
+
+
+    Outputs:
+
+        - <output_dir>/modified.yaml: LLM-generated optimized config
+
+        - <output_dir>/modified.md: Analysis and reasoning from LLM
+
+        - Tensile benchmark results in the output directory
+    """
     # Read input files
     config_text = Path(config_yaml).read_text()
     gpu_spec = GPU_SPEC_INFO[gpu_name]

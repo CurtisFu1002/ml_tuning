@@ -63,5 +63,5 @@ Please provide an optimal logic file which will potentially deliver the best per
 3. Expected performance improvement
 4. Optimal logic file in YAML format surrounded by triple backticks (```yaml)
 
-Note that all the fields in the output logic yaml (in the example) should be remained in output, even if it is not changed!
+Note that all the fields in the output logic yaml (in the example) should remain in output, even if it is not changed!
 """
