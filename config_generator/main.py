@@ -17,7 +17,7 @@ app = typer.Typer()
 
 def _generate_helper(
     config_text: str,
-    gpu_spec: str,
+    gpu_spec: dict[str, str],
     model_name: str,
     logic_text: str | None = None,
 ) -> tuple[str, str, str]:
@@ -132,6 +132,52 @@ def tensile(
             f"--prebuilt-client={prebuilt_client}",
             config_file,
             output_path,
+        ]
+    )
+
+
+@app.command()
+def autotune(
+    config_yaml: Annotated[
+        str,
+        typer.Argument(
+            help="Path to the kernel parameter config YAML to use",
+        ),
+    ],
+    output_dir: Annotated[
+        str,
+        typer.Argument(
+            help="Path to conduct benchmark and write LLM-generated config YAML and Tensile-generated output files",
+        ),
+    ],
+    model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
+    gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
+    prebuilt_client: Annotated[
+        str,
+        typer.Option(
+            help="Specify the full path to a pre-built tensilelite-client executable",
+        ),
+    ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
+) -> None:
+    # Read input files
+    config_text = Path(config_yaml).read_text()
+    gpu_spec = GPU_SPEC_INFO[gpu_name]
+
+    # Generate output
+    prompt, response, yaml_content = _generate_helper(
+        config_text, gpu_spec, model_name, logic_text=None
+    )
+
+    # Write output files
+    generated_file = Path(output_dir).absolute() / "modified.yaml"
+    write_output_files(generated_file, prompt, response, yaml_content)
+
+    # Run Tensile with generated config
+    Tensile.Tensile(
+        [
+            f"--prebuilt-client={prebuilt_client}",
+            str(generated_file),
+            str(generated_file.parent),
         ]
     )
 
