@@ -49,10 +49,16 @@ def _compare_csv_files(file1: Path, file2: Path, column_name: str) -> bool:
         reader1 = csv.DictReader(f1)
         reader2 = csv.DictReader(f2)
 
-        values1 = [float(row[column_name].strip()) for row in reader1]
-        values2 = [float(row[column_name].strip()) for row in reader2]
+        values1 = [row[column_name].strip() for row in reader1]
+        values2 = [row[column_name].strip() for row in reader2]
 
-        return values1 == values2
+        valid = values1 == values2
+
+        if not valid:
+            print(values1)
+            print(values2)
+
+        return valid
 
 
 @app.command()
@@ -288,15 +294,17 @@ def autotune(
             ]
         )
         time_baseline = time.time() - t
+
         valid = _compare_csv_files(
             validate_path
             / "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv",
             output_path
             / "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv",
-            column_name=" TotalFlops",
+            column_name=" WinnerName",
         )
+
+        print("[Validation Result]")
         if valid:
-            print("[Validation Result]")
             print(
                 "Success: LLM-integrated tuning matches Tensile-only tuning."
             )
