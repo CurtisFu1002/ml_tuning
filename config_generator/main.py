@@ -1,5 +1,6 @@
 import csv
 import logging
+import time
 from pathlib import Path
 from typing import Any
 from typing_extensions import Annotated
@@ -253,9 +254,11 @@ def autotune(
     gpu_spec = GPU_SPEC_INFO[gpu_name]
 
     # Generate output
+    t = time.time()
     prompt, response, yaml_content = _generate_helper(
         config_text, gpu_spec, model_name, logic_text=None
     )
+    time_generation = time.time() - t
 
     # Write output files
     output_path = Path(output_dir).absolute()
@@ -263,6 +266,7 @@ def autotune(
     write_output_files(generated_file, prompt, response, yaml_content)
 
     # Run Tensile with generated config
+    t = time.time()
     Tensile.Tensile(
         [
             f"--prebuilt-client={prebuilt_client}",
@@ -270,10 +274,12 @@ def autotune(
             str(generated_file.parent),
         ]
     )
+    time_benchmark = time.time() - t
 
     # Optional validation step
     if validate:
         validate_path = Path(validate).absolute()
+        t = time.time()
         Tensile.Tensile(
             [
                 f"--prebuilt-client={prebuilt_client}",
@@ -281,6 +287,7 @@ def autotune(
                 str(validate_path),
             ]
         )
+        time_baseline = time.time() - t
         valid = _compare_csv_files(
             validate_path
             / "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv",
@@ -289,13 +296,22 @@ def autotune(
             column_name=" TotalFlops",
         )
         if valid:
+            print("[Validation Result]")
             print(
-                "Validation successful: LLM-integrated tuning matches Tensile-only tuning."
+                "Success: LLM-integrated tuning matches Tensile-only tuning."
             )
         else:
             print(
-                "Validation failed: Results differ between LLM-integrated and Tensile-only tuning."
+                "Failed: Results differ between LLM-integrated and Tensile-only tuning."
             )
+
+    print("\n[Timing Summary (Optimized)]")
+    print(f"LLM generation time: {time_generation:.2f} seconds")
+    print(f"Tensile tuning time: {time_benchmark:.2f} seconds")
+    print(f"Total time: {time_generation + time_benchmark:.2f} seconds")
+    if validate:
+        print("\n[Timing Summary (Baseline)]")
+        print(f"Tensile tuning time: {time_baseline:.2f} seconds")
 
 
 if __name__ == "__main__":
