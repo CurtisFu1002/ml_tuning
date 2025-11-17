@@ -1,3 +1,4 @@
+import csv
 import logging
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,18 @@ def _generate_helper(
         response: str = get_llm_response(model_name, prompt)
         output_yaml = extract_yaml(response)
         return prompt, response, output_yaml
+
+
+def _compare_csv_files(file1: Path, file2: Path, column_name: str) -> bool:
+    """Compare two CSV files based on a specific column."""
+    with file1.open("r") as f1, file2.open("r") as f2:
+        reader1 = csv.DictReader(f1)
+        reader2 = csv.DictReader(f2)
+
+        values1 = [float(row[column_name].strip()) for row in reader1]
+        values2 = [float(row[column_name].strip()) for row in reader2]
+
+        return values1 == values2
 
 
 @app.command()
@@ -205,6 +218,13 @@ def autotune(
             help="Specify the full path to a pre-built tensilelite-client executable",
         ),
     ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
+    validate: Annotated[
+        str | None,
+        typer.Option(
+            "--validate",
+            help="Specify the path to the output of Tensile-only tuning, which is used to check the correctness of LLM-integrated tuning",
+        ),
+    ] = None,
 ) -> None:
     """
     Generate optimized config using LLM and run Tensile benchmark automatically.
@@ -228,7 +248,8 @@ def autotune(
         - Tensile benchmark results in the output directory
     """
     # Read input files
-    config_text = Path(config_yaml).read_text()
+    config_file = Path(config_yaml).absolute()
+    config_text = config_file.read_text()
     gpu_spec = GPU_SPEC_INFO[gpu_name]
 
     # Generate output
@@ -237,7 +258,8 @@ def autotune(
     )
 
     # Write output files
-    generated_file = Path(output_dir).absolute() / "modified.yaml"
+    output_path = Path(output_dir).absolute()
+    generated_file = output_path / "modified.yaml"
     write_output_files(generated_file, prompt, response, yaml_content)
 
     # Run Tensile with generated config
@@ -248,6 +270,32 @@ def autotune(
             str(generated_file.parent),
         ]
     )
+
+    # Optional validation step
+    if validate:
+        validate_path = Path(validate).absolute()
+        Tensile.Tensile(
+            [
+                f"--prebuilt-client={prebuilt_client}",
+                str(config_file),
+                str(validate_path),
+            ]
+        )
+        valid = _compare_csv_files(
+            validate_path
+            / "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv",
+            output_path
+            / "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv",
+            column_name=" TotalFlops",
+        )
+        if valid:
+            print(
+                "Validation successful: LLM-integrated tuning matches Tensile-only tuning."
+            )
+        else:
+            print(
+                "Validation failed: Results differ between LLM-integrated and Tensile-only tuning."
+            )
 
 
 if __name__ == "__main__":
