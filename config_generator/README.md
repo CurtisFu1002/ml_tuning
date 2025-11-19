@@ -191,3 +191,11 @@ Run `autotune` with a specific LLM model:
 ```shell
 confgen autotune --model gpt-oss:120b config.yaml output/
 ```
+
+Run `autotune` with validation against baseline Tensile results:
+
+```shell
+confgen autotune config.yaml output/ --validate golden/
+```
+
+This runs both LLM-optimized tuning and baseline Tensile tuning, then compares the results to verify that the LLM-generated configuration produces equivalent or better performance. The baseline results are written to the golden/ directory for comparison.
