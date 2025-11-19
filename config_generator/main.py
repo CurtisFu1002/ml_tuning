@@ -64,19 +64,19 @@ def _compare_csv_files(file1: Path, file2: Path, column_name: str) -> bool:
 @app.command()
 def generate(
     config_yaml: Annotated[
-        str,
+        Path,
         typer.Argument(
             help="the kernel parameter config file to use (YAML format)",
         ),
     ],
     output_file: Annotated[
-        str,
+        Path | None,
         typer.Argument(
-            help="the file path to write the model response to (Markdown is recommended)",
+            help="the file path to write the model response to (Markdown or YAML)",
         ),
-    ] = "stdout",
+    ] = None,
     logic_yaml: Annotated[
-        str | None,
+        Path | None,
         typer.Option(
             help="the logic file example to guide LLM output format",
         ),
@@ -144,15 +144,15 @@ def _tensile_full_help(value: bool) -> None:
 @app.command()
 def tensile(
     config_file: Annotated[
-        str,
+        Path,
         typer.Argument(help="Benchmark config.yaml file"),
     ],
     output_path: Annotated[
-        str,
+        Path,
         typer.Argument(help="Path to conduct benchmark and write output files"),
     ],
     prebuilt_client: Annotated[
-        str,
+        Path,
         typer.Option(
             help="Specify the full path to a pre-built tensilelite-client executable",
         ),
@@ -206,13 +206,13 @@ def tensile(
 @app.command()
 def autotune(
     config_yaml: Annotated[
-        str,
+        Path,
         typer.Argument(
             help="Path to the kernel parameter config YAML to use",
         ),
     ],
     output_dir: Annotated[
-        str,
+        Path,
         typer.Argument(
             help="Path to conduct benchmark and write LLM-generated config YAML and Tensile-generated output files",
         ),
@@ -220,13 +220,13 @@ def autotune(
     model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
     gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
     prebuilt_client: Annotated[
-        str,
+        Path,
         typer.Option(
             help="Specify the full path to a pre-built tensilelite-client executable",
         ),
     ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
     validate: Annotated[
-        str | None,
+        Path | None,
         typer.Option(
             "--validate",
             help="Specify the path to the output of Tensile-only tuning, which is used to check the correctness of LLM-integrated tuning",
