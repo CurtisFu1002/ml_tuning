@@ -9,18 +9,19 @@ from datetime import datetime
 import sys
 
 # ====================== Configuration ======================
-CSV_PATH = 'total_gflops_data.csv'
+CSV_PATH = 'gflops_data_256_and_128.csv'
 MODEL_PATH = 'gflops_final_full.xgb'
 LOG_DIR = 'logs'
 PLOT_DIR = 'plots'
-RANDOM_STATE = 42
+RANDOM_STATE = 42 # 42
 TOP_K_VALUES = [1, 2, 3, 5, 10, 15, 20]
 
 PROBLEM_SIZE_COLS_mnk = ['m', 'n', 'k']
 CANDIDATE_COLS = ['M', 'N', 'K', 'B', 'MIBlockM', 'WaveTileM', 'WaveTileN', 'WaveM', 'WaveN']
 CONFIG_ID_COL = 'mi_idx'
 
-FEATURE_EXTENSION = True
+FEATURE_EXTENSION = False
+PLOT_DATA = True
 
 # mse base
 XGB_PARAMS = {
@@ -108,12 +109,12 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
             real_top_errors = {k: [] for k in [1,2,3,4,5]}
         
         for (m, n, k), group in self.valid_df.groupby(['m','n','k']):
-            # 真實排序
+            # ground truth ranking
             true_sorted = group.sort_values('gflops', ascending=False)
             true_mi_list = true_sorted[CONFIG_ID_COL].astype(int).values.tolist()
             true_gflops_list = true_sorted['gflops'].values.tolist()
             
-            # 預測全部 128 個
+            # predict all 128 mi in a problem size
             X_val = np.array([
                 [m, n, k] + row[CANDIDATE_COLS].tolist()
                 for _, row in self.unique_mi_configs.iterrows()
@@ -122,7 +123,7 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
             mi_to_pred = {int(self.unique_mi_configs.iloc[i]['mi_idx']): pred_scores[i] 
                          for i in range(len(self.unique_mi_configs))}
             
-            # 計算 Real Top-1~5 的 M scrivere
+            # Real Top-1~5  M scrivere
             for k in [1,2,3,4,5]:
                 if len(true_mi_list) >= k:
                     for i in range(k):
@@ -132,7 +133,6 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
                         mre = abs(pred_val - true_val) / true_val if true_val > 0 else 0
                         real_top_errors[k].append(mre)
 
-        # print result
         print("  RealTopErr →", end="")
         for k in [1,2,3,4,5]:
             if real_top_errors[k]:
@@ -224,22 +224,70 @@ def feature_extension(df):
     1. with in one problem size 'gflops_norm' = (curr_gflops - min_gflops) / (max_gflops - min_gflops)
     2. Add other features...
     """
+    
     # for every problem (m,n,k) calculate min_g、max_g
     stats = df.groupby(['m', 'n', 'k'])['gflops'].agg(
         min_g='min',
         max_g='max'
     ).reset_index()
-
     # merge the max min of each problem size min_g / max_g
     df = df.merge(stats, on=['m', 'n', 'k'], how='left')
-    
     df['gflops_norm'] = (df['gflops'] - df['min_g']) / (df['max_g'] - df['min_g'] + 1e-8)
     df = df.drop(columns=['min_g', 'max_g'])
 
     return df
 
-def evaluate(bst, test_df, unique_mi_configs):
-    """Evaluate on test set - (128 config）"""
+def plot_eval(results_df,
+              rank_of_true_best_list,
+              topk_regret,
+              real_topk_mean_rank,
+              mre_list,
+              plot_dir):
+    
+    os.makedirs(plot_dir, exist_ok=True)
+
+    fig, axes = plt.subplots(2, 3, figsize=(20, 10))
+
+    # Top-1 Regret distribution
+    axes[0,0].hist(results_df['regret'], bins=50, alpha=0.7, color='salmon', edgecolor='black')
+    axes[0,0].axvline(0.05, color='red', linestyle='--')
+    axes[0,0].set_title('Top-1 Regret Distribution')
+    axes[0,0].grid(alpha=0.3)
+
+    # Pred vs True GFLOPS
+    axes[0,1].scatter(results_df['true_gflops'], results_df['pred_gflops'], alpha=0.6)
+    maxv = max(results_df['true_gflops'].max(), results_df['pred_gflops'].max()) * 1.05
+    axes[0,1].plot([0, maxv], [0, maxv], 'k--')
+    axes[0,1].set_title('Predicted vs True Best GFLOPS')
+    axes[0,1].grid(alpha=0.3)
+
+    # Rank of True Best
+    axes[0,2].hist(rank_of_true_best_list, bins=50, alpha=0.7, color='lightblue', edgecolor='black')
+    axes[0,2].set_title('Rank of True Best')
+    axes[0,2].grid(alpha=0.3)
+
+    # Mean Top-k Regret
+    axes[1,0].bar(TOP_K_VALUES, [np.mean(topk_regret[k]) for k in TOP_K_VALUES])
+    axes[1,0].set_title('Mean Top-k Regret')
+    axes[1,0].grid(alpha=0.3)
+
+    # Mean Rank of Real Top-k
+    axes[1,1].bar(TOP_K_VALUES, [np.mean(real_topk_mean_rank[k]) for k in TOP_K_VALUES], color='orange')
+    axes[1,1].set_title('Mean Rank of Real Top-k')
+    axes[1,1].grid(alpha=0.3)
+
+    # Relative Prediction Error distribution
+    axes[1,2].hist(mre_list, bins=50, alpha=0.7, color='lightgreen', edgecolor='black')
+    axes[1,2].set_title('Relative Prediction Error Distribution')
+    axes[1,2].grid(alpha=0.3)
+
+    plt.tight_layout()
+    plot_path = os.path.join(plot_dir, 'eval_full_v2.png')
+    plt.savefig(plot_path, dpi=150)
+    print(f"\nsave plot {plot_path}")
+
+
+def evaluate(bst, test_df, unique_mi_configs, plot=True):
     os.makedirs(PLOT_DIR, exist_ok=True)
     
     topk_correct = {k: 0 for k in TOP_K_VALUES}
@@ -256,27 +304,24 @@ def evaluate(bst, test_df, unique_mi_configs):
     
     for (m, n, k), group in test_df.groupby(PROBLEM_SIZE_COLS_mnk):
         total += 1
-        
-        # 確保 group 有 index 從 0 到 len(group)-1（安全起見）
         group = group.reset_index(drop=True)
         
         # Ground truth
-        actual_gflops = group['gflops'].values # To a np array
+        actual_gflops = group['gflops'].values
         true_best_gflops = actual_gflops.max()
         
-        # 真實排序（local index）
+        # ranking (local)
         true_sorted_local_idx = np.argsort(actual_gflops)[::-1]
         true_mi_indices = group.iloc[true_sorted_local_idx][CONFIG_ID_COL].astype(int).values
         
         true_best_local_idx = true_sorted_local_idx[0]
         true_mi_idx = int(group.iloc[true_best_local_idx][CONFIG_ID_COL])
         
-        # 建立 mi_idx → actual_gflops 的映射（只對當前 problem 存在的 config）
         mi_to_actual = dict(zip(group[CONFIG_ID_COL].astype(int), group['gflops']))
         
-        # === Predict all 128 mi config in a problem size ===
+        # predict all 128
         X_test = []
-        cfg_to_global_idx = {}  # mi_idx → unique_mi_configs 中的 index
+        cfg_to_global_idx = {}
         for idx, cfg in unique_mi_configs.iterrows():
             mi_idx = int(cfg[CONFIG_ID_COL])
             features = [m, n, k] + [cfg[col] for col in CANDIDATE_COLS]
@@ -284,13 +329,12 @@ def evaluate(bst, test_df, unique_mi_configs):
             cfg_to_global_idx[mi_idx] = idx
         X_test = np.array(X_test, dtype=np.float32)
         dtest = xgb.DMatrix(X_test)
-        pred_scores = bst.predict(dtest)  # shape: (128,)
+        pred_scores = bst.predict(dtest)
         
-        # 預測排序（global index in unique_mi_configs）
         pred_sorted_global_idx = np.argsort(pred_scores)[::-1]
         pred_mi_indices = [int(unique_mi_configs.iloc[i][CONFIG_ID_COL]) for i in pred_sorted_global_idx]
         
-        # === 計算所有預測誤差（只算有實際測量的）===
+        # errors on measured configs
         for global_idx in range(n_configs):
             mi_idx = int(unique_mi_configs.iloc[global_idx][CONFIG_ID_COL])
             if mi_idx in mi_to_actual:
@@ -302,36 +346,36 @@ def evaluate(bst, test_df, unique_mi_configs):
                 error_lists['rmse'].append(abs_err ** 2)
                 error_lists['mre'].append(rel_err)
         
-        # === Top-1 regret ===
+        # Top-1 regret
         pred_best_mi = pred_mi_indices[0]
         pred_gflops = mi_to_actual.get(pred_best_mi, 0)
         regret = (true_best_gflops - pred_gflops) / true_best_gflops if true_best_gflops > 0 else 0
         regrets.append(regret)
         
-        # === True best 在預測排序中的 rank ===
+        # rank of true best
         if true_mi_idx in cfg_to_global_idx:
             true_global_idx = cfg_to_global_idx[true_mi_idx]
             true_best_rank = np.where(pred_sorted_global_idx == true_global_idx)[0][0] + 1
         else:
-            true_best_rank = n_configs + 1  # 最差
+            true_best_rank = n_configs + 1
         rank_of_true_best_list.append(true_best_rank)
         
-        # === Top-k accuracy ===
-        for k in TOP_K_VALUES:
-            if true_mi_idx in pred_mi_indices[:k]:
-                topk_correct[k] += 1
+        # Top-k accuracy
+        for kk in TOP_K_VALUES:
+            if true_mi_idx in pred_mi_indices[:kk]:
+                topk_correct[kk] += 1
         
-        # === Top-k regret ===
-        for k in TOP_K_VALUES:
-            topk_mis = pred_mi_indices[:k]
+        # Top-k regret
+        for kk in TOP_K_VALUES:
+            topk_mis = pred_mi_indices[:kk]
             actual_in_topk = [mi_to_actual.get(mi, 0) for mi in topk_mis]
             best_in_topk = max(actual_in_topk)
             tk_regret = max(0, (true_best_gflops - best_in_topk) / true_best_gflops)
-            topk_regret[k].append(tk_regret)
+            topk_regret[kk].append(tk_regret)
         
-        # === Real top-k 的平均 predicted rank ===
-        for k in TOP_K_VALUES:
-            real_topk_mi = true_mi_indices[:k]
+        # Real top-k mean predicted rank
+        for kk in TOP_K_VALUES:
+            real_topk_mi = true_mi_indices[:kk]
             ranks = []
             for mi in real_topk_mi:
                 if mi in pred_mi_indices:
@@ -339,7 +383,7 @@ def evaluate(bst, test_df, unique_mi_configs):
                 else:
                     rank = n_configs + 1
                 ranks.append(rank)
-            real_topk_mean_rank[k].append(np.mean(ranks))
+            real_topk_mean_rank[kk].append(np.mean(ranks))
         
         results.append({
             'm': m, 'n': n, 'k': k,
@@ -352,103 +396,13 @@ def evaluate(bst, test_df, unique_mi_configs):
         if total <= 3:
             print(f"  {m}x{n}x{k}: true={true_best_gflops:.0f}, pred={pred_gflops:.0f}, regret={regret:.1%}, rank={true_best_rank}")
     
-    
-    print(f"\n{'='*70}")
-    print("REAL TOP-1~5 PREDICTION ERROR")
-    print(f"{'='*70}")
-    
-    real_top_mre = {k: [] for k in [1,2,3,4,5]}
-    
-    for (m, n, k), group in test_df.groupby(PROBLEM_SIZE_COLS_mnk):
-        group = group.reset_index(drop=True)
-        true_sorted = group.sort_values('gflops', ascending=False)
-        true_mi = true_sorted[CONFIG_ID_COL].astype(int).values
-        true_g = true_sorted['gflops'].values
-        
-        # 預測 128 個
-        X_test = np.array([[m,n,k] + row[CANDIDATE_COLS].tolist() 
-                          for _, row in unique_mi_configs.iterrows()], dtype=np.float32)
-        pred_all = bst.predict(xgb.DMatrix(X_test))
-        mi_to_pred = {int(unique_mi_configs.iloc[i]['mi_idx']): pred_all[i] 
-                     for i in range(len(unique_mi_configs))}
-        
-        for k in [1,2,3,4,5]:
-            if len(true_mi) >= k:
-                for i in range(k):
-                    mi = true_mi[i]
-                    if mi in mi_to_pred:
-                        mre = abs(mi_to_pred[mi] - true_g[i]) / true_g[i]
-                        real_top_mre[k].append(mre)
-    
-    for k in [1,2,3,4,5]:
-        if real_top_mre[k]:
-            print(f"Real Top-{k:2d} → Avg Pred MRE: {np.mean(real_top_mre[k]):6.2%}  "
-                  f"(samples: {len(real_top_mre[k]):4d}, median: {np.median(real_top_mre[k]):5.2%})")
-            
-    # === 最終輸出 ===
-    print(f"\n{'='*70}")
-    print("FINAL RESULTS")
-    print(f"{'='*70}")
-    
-    for k in TOP_K_VALUES:
-        print(f"Top-{k:2d} Accuracy : {topk_correct[k]/total:.1%} ({topk_correct[k]}/{total})")
-    
-    print(f"\nTop-1 Regret         : {np.mean(regrets):.2%} (median {np.median(regrets):.2%})")
-    print(f"True Best Rank (mean): {np.mean(rank_of_true_best_list):.1f} (median {np.median(rank_of_true_best_list):.1f})")
-    
+    # aggregate
     mae = np.mean(error_lists['mae'])
     rmse = np.sqrt(np.mean(error_lists['rmse']))
     mre = np.mean(error_lists['mre'])
-    print(f"\nPrediction Error (all measured configs):")
-    print(f"  MAE  : {mae:.2f} GFLOPS")
-    print(f"  RMSE : {rmse:.2f} GFLOPS")
-    print(f"  MRE  : {mre:.2%}")
     
-    print(f"\nTop-k Regret (mean):")
-    for k in TOP_K_VALUES:
-        print(f"  Top-{k:2d} : {np.mean(topk_regret[k]):.2%}")
-    
-    print(f"\nMean Rank of Real Top-k:")
-    for k in TOP_K_VALUES:
-        print(f"  Real Top-{k:2d} → avg rank {np.mean(real_topk_mean_rank[k]):.1f}")
-    
-    # === plot ===
-    df_plot = pd.DataFrame(results)
-    fig, axes = plt.subplots(2, 3, figsize=(20, 10))
-    
-    axes[0,0].hist(df_plot['regret'], bins=50, alpha=0.7, color='salmon', edgecolor='black')
-    axes[0,0].axvline(0.05, color='red', linestyle='--')
-    axes[0,0].set_title('Top-1 Regret Distribution')
-    axes[0,0].grid(alpha=0.3)
-    
-    axes[0,1].scatter(df_plot['true_gflops'], df_plot['pred_gflops'], alpha=0.6)
-    maxv = max(df_plot['true_gflops'].max(), df_plot['pred_gflops'].max()) * 1.05
-    axes[0,1].plot([0, maxv], [0, maxv], 'k--')
-    axes[0,1].set_title('Predicted vs True Best GFLOPS')
-    axes[0,1].grid(alpha=0.3)
-    
-    axes[0,2].hist(rank_of_true_best_list, bins=50, alpha=0.7, color='lightblue', edgecolor='black')
-    axes[0,2].set_title('Rank of True Best')
-    axes[0,2].grid(alpha=0.3)
-    
-    axes[1,0].bar(TOP_K_VALUES, [np.mean(topk_regret[k]) for k in TOP_K_VALUES])
-    axes[1,0].set_title('Mean Top-k Regret')
-    axes[1,0].grid(alpha=0.3)
-    
-    axes[1,1].bar(TOP_K_VALUES, [np.mean(real_topk_mean_rank[k]) for k in TOP_K_VALUES], color='orange')
-    axes[1,1].set_title('Mean Rank of Real Top-k')
-    axes[1,1].grid(alpha=0.3)
-    
-    axes[1,2].hist(error_lists['mre'], bins=50, alpha=0.7, color='lightgreen', edgecolor='black')
-    axes[1,2].set_title('Relative Prediction Error Distribution')
-    axes[1,2].grid(alpha=0.3)
-    
-    plt.tight_layout()
-    plot_path = f'{PLOT_DIR}/eval_full_v2.png'
-    plt.savefig(plot_path, dpi=150)
-    print(f"\nsave plot{plot_path}")
-    
-    return {
+    # metrics & plot_data
+    metrics = {
         'topk_accuracy': {k: topk_correct[k]/total for k in TOP_K_VALUES},
         'regret_mean': float(np.mean(regrets)),
         'true_best_rank_mean': float(np.mean(rank_of_true_best_list)),
@@ -456,6 +410,19 @@ def evaluate(bst, test_df, unique_mi_configs):
         'topk_regret_mean': {k: float(np.mean(topk_regret[k])) for k in TOP_K_VALUES},
         'real_topk_mean_rank': {k: float(np.mean(real_topk_mean_rank[k])) for k in TOP_K_VALUES},
     }
+    
+    if plot:
+        plot_eval(
+            results_df=pd.DataFrame(results),
+            rank_of_true_best_list=rank_of_true_best_list,
+            topk_regret=topk_regret,
+            real_topk_mean_rank=real_topk_mean_rank,
+            mre_list=error_lists['mre'],
+            plot_dir=PLOT_DIR,
+        )
+    
+    return metrics
+
 
 # ====================== Main ======================
 if __name__ == "__main__":
@@ -494,9 +461,11 @@ if __name__ == "__main__":
     )
 
     print("\nstart evaluation")
-    results = evaluate(bst, test_df, unique_mi_configs)
+    results = evaluate(bst, test_df, unique_mi_configs, PLOT_DATA)
     # results = evaluate(bst, valid_df, unique_mi_configs)
 
+    
+    
     bst.save_model(MODEL_PATH)
     summary_file = os.path.join(LOG_DIR, f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     with open(summary_file, 'w') as f:
