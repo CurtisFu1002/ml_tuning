@@ -1,10 +1,13 @@
 import csv
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 from typing_extensions import Annotated
 
+import numpy as np
+import pandas as pd
 import typer
 import yaml
 from Tensile import Tensile
@@ -320,6 +323,157 @@ def autotune(
     if validate:
         print("\n[Timing Summary (Baseline)]")
         print(f"Tensile tuning time: {time_baseline:.2f} seconds")
+
+
+@app.command()
+def evaluate(
+    config_yaml: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the kernel parameter config YAML to use",
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to conduct benchmark and write LLM-generated config YAML and Tensile-generated output files",
+        ),
+    ],
+    num_runs: Annotated[
+        int,
+        typer.Option(
+            "--num-runs",
+            help="Number of times to run the evaluation",
+        ),
+    ] = 1,
+    model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
+    gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
+    prebuilt_client: Annotated[
+        Path,
+        typer.Option(
+            help="Specify the full path to a pre-built tensilelite-client executable",
+        ),
+    ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
+) -> None:
+    """
+    Evaluate LLM-guided kernel tuning with quantitative metrics.
+
+    This command runs a baseline Tensile benchmark followed by multiple LLM-guided
+    tuning iterations. It computes the following evaluation metrics for each run:
+
+    Metrics:
+
+        - Tuning Time Reduction (TR): Net time savings compared to baseline,
+          calculated as (T_baseline - (T_llm + T_tensile)) / T_baseline
+
+        - Performance Retention (PR): Ratio of optimized to baseline GFLOPS,
+          calculated as max_perf_optimized / max_perf_baseline
+
+        - Winner Consistency (WC): Whether the LLM-optimized config produces
+          the same winning kernel as the baseline
+
+
+    Outputs:
+
+        - <output_dir>/baseline/: Baseline Tensile benchmark results
+
+        - <output_dir>/run_<n>/: Results for each LLM-guided run
+
+        - <output_dir>/evaluation_summary.csv: Aggregated metrics across all runs
+    """
+
+    # Read input files
+    config_file = Path(config_yaml).absolute()
+    config_text = config_file.read_text()
+    gpu_spec = GPU_SPEC_INFO[gpu_name]
+
+    # Run baseline Tensile benchmark
+    t = time.time()
+    Tensile.Tensile(
+        [
+            f"--prebuilt-client={prebuilt_client}",
+            str(config_file),
+            str(output_dir / "baseline"),
+        ]
+    )
+    time_baseline = time.time() - t
+    shutil.copy2(config_file, output_dir / "baseline" / config_file.name)
+
+    FILENAME = "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv"
+    df_baseline = pd.read_csv(output_dir / "baseline" / FILENAME)
+    perf_baseline: np.float64 = df_baseline[" WinnerGFlops"].values[0]
+    winner_baseline: str = df_baseline[" WinnerName"].values[0]
+
+    df = pd.DataFrame(
+        columns=[
+            "Run",
+            "Baseline Time (s)",
+            "LLM Time (s)",
+            "Tensile Time (s)",
+            "Tuning Time Reduction",
+            "Performance Retention",
+            "Winner Matched",
+        ]
+    )
+
+    # Run multiple evaluation runs
+    for run_idx in range(num_runs):
+        print(f"\n[Run {run_idx + 1}/{num_runs}]")
+
+        # Generate output
+        t = time.time()
+        prompt, response, yaml_content = _generate_helper(
+            config_text, gpu_spec, model_name, logic_text=None
+        )
+        time_llm = time.time() - t
+
+        # Write output files
+        output_path = (output_dir / f"run_{run_idx + 1}").absolute()
+        generated_file = output_path / "modified.yaml"
+        write_output_files(generated_file, prompt, response, yaml_content)
+
+        # Run Tensile with generated config
+        t = time.time()
+        Tensile.Tensile(
+            [
+                f"--prebuilt-client={prebuilt_client}",
+                str(generated_file),
+                str(generated_file.parent),
+            ]
+        )
+        time_tensile = time.time() - t
+
+        # Calculate tuning time reduction
+        tuning_time_reduction: float = (
+            time_baseline - (time_llm + time_tensile)
+        ) / time_baseline
+
+        # Read benchmark results from CSV
+        df_optimized = pd.read_csv(output_path / FILENAME)
+        perf_optimized: np.float64 = df_optimized[" WinnerGFlops"].values[0]
+        winner_optimized: str = df_optimized[" WinnerName"].values[0]
+
+        # Calculate performance retention
+        performance_retension: float = (
+            perf_optimized / perf_baseline if perf_baseline != 0 else 0
+        )
+
+        # Check if winners matched
+        winner_matched: bool = winner_optimized == winner_baseline
+
+        df.loc[run_idx] = [
+            run_idx + 1,
+            round(time_baseline, 2),
+            round(time_llm, 2),
+            round(time_tensile, 2),
+            round(tuning_time_reduction, 4),
+            round(performance_retension, 4),
+            winner_matched,
+        ]
+
+        print("\n[Evaluation Summary]")
+        print(df.to_string(index=False))  # type: ignore
+        df.to_csv(output_dir / "evaluation_summary.csv", index=False)
 
 
 if __name__ == "__main__":

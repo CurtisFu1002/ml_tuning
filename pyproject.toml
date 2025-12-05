@@ -9,7 +9,9 @@ description = "A repo to store all code related to machine learning based tuning
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "numpy>=2.2.6",
     "ollama>=0.6.0",
+    "pandas>=2.3.3",
     "pydantic>=2.12.3",
     "pyyaml>=6.0.3",
     "rocisa",

@@ -172,7 +172,7 @@ Run `confgen` with `--help` option to see the usage:
 confgen --help
 ```
 
-### Generate Modified Config YAML with LLM
+### 1. Generate Modified Config YAML with LLM
 
 You can see the usage of `generate` subcommand via:
 
@@ -191,7 +191,7 @@ To use a different model, add the `--model` option. For example:
 confgen generate --model codellama:7b config.yaml output.md
 ```
 
-### Generate Logic YAML with LLM
+### 2. Generate Logic YAML with LLM
 
 To generate a logic YAML, you have to provide an additional logic file with `--logic-yaml` as the example of output format for LLM. Also, make sure the Ollama server is running before you run the command.
 
@@ -199,7 +199,7 @@ To generate a logic YAML, you have to provide an additional logic file with `--l
 confgen generate --logic-yaml logic.yaml config.yaml output.md
 ```
 
-### Run Tensile Tuning
+### 3. Run Tensile Tuning
 
 The `tensile` subcommand calls the `Tensile.sh` to run the auto tuning. Please add the build directory of TensileLite to `PATH` environment variable or create an alias `Tensile.sh` that points to the absolute path of `Tensile.sh`.
 
@@ -213,7 +213,7 @@ The usage of this subcommand is completely the same as `Tensile.sh`. For example
 confgen tensile config.yaml output/
 ```
 
-### End-to-end Config Generation and Benchmarking
+### 4. End-to-end Config Generation and Benchmarking
 
 The `autotune` command combines LLM-based config generation and Tensile benchmarking into a single workflow. View the full command options:
 
@@ -245,3 +245,50 @@ confgen autotune config.yaml output/ --validate golden/
 ```
 
 This runs both LLM-optimized tuning and baseline Tensile tuning, then compares the results to verify that the LLM-generated configuration produces equivalent or better performance. The baseline results are written to the golden/ directory for comparison.
+
+### 5. Evaluate LLM-Guided Tuning with Quantitative Metrics
+
+The `evaluate` command runs systematic experiments to measure the effectiveness of different prompting strategies or the capacities of differnet LLMs during the LLM-guided kernel tuning. It computes the three evaluation metrics (TR, PR, WC) defined in the [Evaluation Metrics](#evaluation-metrics) section.
+
+View the full command options:
+
+```shell
+confgen evaluate --help
+```
+
+Run a single evaluation (baseline + one LLM-guided run):
+
+```shell
+confgen evaluate config.yaml output/
+```
+
+Run multiple LLM-guided iterations to measure Winner Consistency:
+
+```shell
+confgen evaluate config.yaml output/ --num-runs 5
+```
+
+Workflow:
+
+1. Runs baseline Tensile benchmark on the original config
+2. For each run (1 to `--num-runs`):
+    - Generates optimized config using LLM
+    - Runs Tensile benchmark on the generated config
+    - Computes TR, PR, and winner match for this run
+3. Saves aggregated results to `evaluation_summary.csv`
+
+Outputs:
+
+- `<output_dir>/baseline/`: Baseline Tensile benchmark results and a copy of the original config
+- `<output_dir>/run_<n>/`: LLM-generated config (modified.yaml, modified.md) and Tensile results for each run
+- `<output_dir>/evaluation_summary.csv`: Summary table with metrics for all runs
+
+Example CSV Output:
+
+| Run | Baseline Time (s) | LLM Time (s) | Tensile Time (s) | Tuning Time Reduction | Performance Retention | Winner Matched |
+| - | ------ | ---- | ----- | ------ | ------ | ----- |
+| 1 | 120.00 | 5.23 | 45.67 | 0.5758 | 1.0000 | True  |
+| 2 | 120.00 | 4.89 | 48.12 | 0.5583 | 1.0000 | True  |
+| 3 | 120.00 | 5.01 | 52.34 | 0.5221 | 0.9985 | False |
+
+To compute the overall Winner Consistency (WC), calculate the proportion of runs where `Winner Matched` is `True`.
