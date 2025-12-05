@@ -65,7 +65,7 @@ class BenchmarkProblemSizeGroup(BaseModel):
     InitialSolutionParameters: list | None = None
     BenchmarkCommonParameters: list[BenchmarkCommonParameter]
     ForkParameters: list[MatrixInstruction] | None = None
-    BenchmarkJoinParameters: list | None = None
+    BenchmarkJoinParameters: None = None  # Not supported, set to None
     BenchmarkFinalParameters: list[ProblemSizes | BiasTypeArgs]
 
 
