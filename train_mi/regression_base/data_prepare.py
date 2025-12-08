@@ -54,7 +54,7 @@ def load_data(csv_path):
     return df, unique_mi_configs
 
 
-def split_data(df, test_size=0.1, valid_size=0.1, random_state=42):
+def split_data(df, test_size=0.1, valid_size=0.1, random_state=42,  use_sample_split=False):
     """
     Split data by problem size (m,n,k) to avoid data leakage.
     Each problem size contains 128 MI configurations.
@@ -82,13 +82,32 @@ def split_data(df, test_size=0.1, valid_size=0.1, random_state=42):
     # train_prob, valid_prob = train_test_split(
     #     train_valid_prob, test_size=valid_size, random_state=random_state + 1
     # )
+
+
     # another way to split
-    valid_prob = train_valid_prob.sample(
-        frac=valid_size,
-        random_state=random_state + 1
-    )
-    train_prob = train_valid_prob.drop(valid_prob.index).reset_index(drop=True)
-    valid_prob = valid_prob.reset_index(drop=True)
+    # valid_prob = train_valid_prob.sample(
+    #     frac=valid_size,
+    #     random_state=random_state + 1
+    # )
+    # train_prob = train_valid_prob.drop(valid_prob.index).reset_index(drop=True)
+    # valid_prob = valid_prob.reset_index(drop=True)
+    if use_sample_split:
+        # Use sample() method - matches regression.py behavior
+        valid_prob = train_valid_prob.sample(
+            frac=valid_size,
+            random_state=random_state + 1
+        )
+        train_prob = train_valid_prob.drop(valid_prob.index).reset_index(drop=True)
+        valid_prob = valid_prob.reset_index(drop=True)
+    else:
+        # Use train_test_split
+        train_prob, valid_prob = train_test_split(
+            train_valid_prob, test_size=valid_size, random_state=random_state + 1
+        )
+        train_prob = train_prob.reset_index(drop=True)
+        valid_prob = valid_prob.reset_index(drop=True)
+    
+    test_prob = test_prob.reset_index(drop=True)
 
     print(f"Problem size split:")
     print(f"  Train: {len(train_prob)} problems")
@@ -269,10 +288,21 @@ def prepare_full_dataset(df, unique_mi_configs, args):
         random_state=args.random_state,
     )
 
+
+    def get_split_indices(df, prob_df):
+        """Get original df indices for rows matching problem sizes"""
+        # create (m,n,k) key for tuple comparison
+        prob_keys = set(zip(prob_df['m'], prob_df['n'], prob_df['k']))
+        mask = df.apply(lambda row: (row['m'], row['n'], row['k']) in prob_keys, axis=1)
+        return df[mask].index.tolist()
+    
+    train_idx = get_split_indices(df, train_prob)
+    valid_idx = get_split_indices(df, valid_prob)
+    test_idx = get_split_indices(df, test_prob)
     # Get indices for each split
-    train_idx = df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk).index
-    valid_idx = df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk).index
-    test_idx = df.merge(test_prob, on=PROBLEM_SIZE_COLS_mnk).index
+    # train_idx = df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk).index
+    # valid_idx = df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk).index
+    # test_idx = df.merge(test_prob, on=PROBLEM_SIZE_COLS_mnk).index
 
     # Slice the pre-computed features
     X_train, y_train = X_full[train_idx], y_full[train_idx]

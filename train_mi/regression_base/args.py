@@ -33,11 +33,11 @@ def get_args():
                               help='Disable feature standardization')
     feature_group.add_argument('--std_problem_size', action='store_true', default=False,
                               help='Standardize problem size (m, n, k)')
-    feature_group.add_argument('--std_wave_params', action='store_true', default=True,
+    feature_group.add_argument('--std_wave_params', action='store_true', default=False,
                               help='Standardize wave parameters')
-    feature_group.add_argument('--use_tile_type_encoding', action='store_true', default=True,
+    feature_group.add_argument('--use_tile_type_encoding', action='store_true', default=False,
                               help='Use one-hot encoding for tile type (square vs non-square)')
-    feature_group.add_argument('--remove_const_features', action='store_true', default=True,
+    feature_group.add_argument('--remove_const_features', action='store_true', default=False,
                               help='Remove constant features (B, MIBlockM)')
     feature_group.add_argument('--feature_extension', action='store_true', default=False,
                               help='Add extended features like gflops_norm')
