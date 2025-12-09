@@ -20,6 +20,49 @@ regression_base/
 └── main.py              # Main entry point
 ```
 
+## Recent Updates (2025-12-08)
+
+### Major Feature: Top-K Weighted Training
+
+Added **sample weighting mechanism** to help the model focus more on high-GFLOPS configurations for each problem, improving Top-1/Top-K accuracy.
+
+**Modified Files:**
+1. **`objective.py`** (new) - Custom objective functions and weight calculation
+2. **`args.py`** (modified) - Added 8 weight-related parameters
+3. **`train.py`** (modified) - Support for sample-weighted training
+4. **`print_config()`** (modified) - Display weight configuration info
+
+**Core Mechanism:**
+- For each problem (m, n, k), calculate sample weights based on GFLOPS ranking
+- Top-1 configuration gets highest weight (default 10x)
+- Top-2 to Top-K get decaying weights (linear/exponential/stepped options)
+- Remaining configurations get base weight (1x)
+
+**Usage:**
+```bash
+# Basic usage: stepped weights, focus on Top-5
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_top_k 5 \
+    --weight_scheme stepped \
+    --weight_top1 10.0 \
+    --weight_topk 3.0
+
+# Advanced: custom objective + Huber loss
+python -m regression_base.main \
+    --use_sample_weights \
+    --use_custom_objective \
+    --huber_delta 5000 \
+    --weight_scheme linear
+```
+
+**Expected Results:**
+- Top-1 Accuracy: 10% → 15-20%
+- Top-1 Regret: 26% → 20-22%
+- R@5: 26% → 35-40%
+
+---
+
 ## Quick Start
 
 
@@ -79,6 +122,26 @@ python -m regression_base.main \
 - `--remove_const_features`: Remove constant features B, MIBlockM (default: `True`)
 - `--feature_extension`: Add extended features like gflops_norm (default: `False`)
 
+### Sample Weighting (Top-K Emphasis)
+- `--use_sample_weights`: Enable sample weighting mechanism (default: `True`)
+- `--weight_top_k`: Number of top K configurations to focus on (default: `5`)
+- `--weight_scheme`: Weight decay scheme - `linear`, `exponential`, `harmonic`, `stepped`, `smooth` (default: `linear`)
+- `--weight_top1`: Weight multiplier for Top-1 configuration (default: `10.0`)
+- `--weight_topk`: Weight multiplier for Top-2 to Top-K, only used by `stepped` scheme (default: `3.0`)
+- `--weight_base`: Base weight for non-Top-K configurations (default: `1.0`)
+- `--use_custom_objective`: Use custom objective function (default: `True`)
+- `--huber_delta`: Delta parameter for Huber loss, `None` uses MSE (default: `None`)
+
+**Weight Strategy Comparison:**
+
+| Scheme | Top-1 | Top-2~K | Others | Characteristics |
+|--------|-------|---------|--------|----------------|
+| `stepped` | 10x | 3x | 1x | Stepped, simple and intuitive ⭐Recommended |
+| `linear` | 10x | Linear decay | 1x | Smooth transition |
+| `exponential` | 10x | Exponential decay | 1x | Emphasizes Top-1 |
+| `harmonic` | 10x | 1/rank | 1x | Similar to NDCG |
+| `smooth` | 10x | softmax | 1x | Based on GFLOPS distribution |
+
 ### XGBoost Hyperparameters
 - `--objective`: XGBoost objective function (default: `reg:squarederror`)
 - `--eval_metric`: Evaluation metric (default: `rmse`)
@@ -111,38 +174,78 @@ python -m regression_base.main \
 
 ## Running Experiments
 
-### Example 1: Basic Experiment with Custom Learning Rate
+### Example 1: Weighted Training for Top-K Optimization
 
 ```bash
-python -m regression.main \
+# Conservative: Stepped weights, focus on Top-5
+python -m regression_base.main \
+    --csv_path gflops_data_output_256.csv \
+    --use_sample_weights \
+    --weight_top_k 5 \
+    --weight_scheme stepped \
+    --weight_top1 10.0 \
+    --weight_topk 3.0 \
+    --exp_name stepped_weights
+
+# Standard: Linear decay, focus on Top-5
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_scheme linear \
+    --weight_top_k 5 \
+    --weight_top1 10.0 \
+    --exp_name linear_weights
+
+# Aggressive: Exponential decay, emphasize Top-3
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_scheme exponential \
+    --weight_top_k 3 \
+    --weight_top1 20.0 \
+    --weight_base 0.5 \
+    --exp_name aggressive_top3
+
+# Custom Objective + Huber Loss (more robust to outliers)
+python -m regression_base.main \
+    --use_sample_weights \
+    --use_custom_objective \
+    --huber_delta 5000 \
+    --weight_top_k 5 \
+    --weight_top1 15.0 \
+    --exp_name huber_robust
+```
+
+### Example 2: Basic Experiment with Custom Learning Rate
+
+```bash
+python -m regression_base.main \
     --eta 0.1 \
     --exp_name high_lr_experiment
 ```
 
-### Example 2: Deep Trees with High Regularization
+### Example 3: Deep Trees with High Regularization
 
 ```bash
-python -m regression.main \
+python -m regression_base.main \
     --max_depth 20 \
     --lambda_reg 2.0 \
     --alpha 1.0 \
     --exp_name deep_regularized
 ```
 
-### Example 3: Feature Engineering Experiment
+### Example 4: Feature Engineering Experiment
 
 ```bash
-python -m regression.main \
+python -m regression_base.main \
     --feature_extension \
     --std_problem_size \
     --no_standardization \
     --exp_name feature_eng_test
 ```
 
-### Example 4: Fast Training with Fewer Rounds
+### Example 5: Fast Training with Fewer Rounds
 
 ```bash
-python -m regression.main \
+python -m regression_base.main \
     --num_boost_round 100 \
     --early_stopping_rounds 50 \
     --eta 0.1 \
@@ -236,32 +339,118 @@ Create `experiments/grid_search_lr.sh`:
 
 for lr in 0.01 0.05 0.1 0.2
 do
-    echo "Training with learning rate: $lr"
-    python -m regression.main \
-        --eta $lr \
-        --exp_name lr_${lr} \
-        --model_path models/model_lr_${lr}.xgb
-done
-```
+### 🆕 Sample Weighting Ablation Study
 
-### Experiment with Different Tree Depths
-
-Create `experiments/depth_search.sh`:
+Create `experiments/weight_ablation.sh`:
 ```bash
 #!/bin/bash
 
-for depth in 8 12 16 20 24
+# Baseline (no weights)
+python -m regression_base.main \
+    --use_sample_weights=False \
+    --exp_name baseline_no_weights
+
+# Stepped scheme (recommended for beginners)
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_scheme stepped \
+    --weight_top_k 5 \
+    --weight_top1 10.0 \
+    --weight_topk 3.0 \
+    --exp_name weight_stepped
+
+# Linear scheme
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_scheme linear \
+    --weight_top_k 5 \
+    --weight_top1 10.0 \
+    --exp_name weight_linear
+
+# Exponential scheme
+python -m regression_base.main \
+    --use_sample_weights \
+    --weight_scheme exponential \
+    --weight_top_k 5 \
+    --weight_top1 10.0 \
+    --exp_name weight_exponential
+
+# Different K values
+for k in 1 3 5 10
 do
-    echo "Training with max_depth: $depth"
-    python -m regression.main \
-        --max_depth $depth \
-        --exp_name depth_${depth} \
-        --model_path models/model_depth_${depth}.xgb
+    python -m regression_base.main \
+        --use_sample_weights \
+        --weight_scheme stepped \
+        --weight_top_k $k \
+        --exp_name weight_topk_${k}
+done
+
+# Different top1 weights
+for w in 5.0 10.0 15.0 20.0
+do
+    python -m regression_base.main \
+        --use_sample_weights \
+        --weight_scheme stepped \
+        --weight_top1 $w \
+        --exp_name weight_top1_${w}
 done
 ```
+## Tips for Experimentation
 
-### Compare Different Boosters
+1. **Start with small experiments**: Use `--num_boost_round 50` for quick tests
+2. **Name your experiments**: Always use `--exp_name` for easy tracking
+3. **Monitor validation metrics**: Check the validation curve JSON files
+4. **Compare results**: Use the summary JSON files to compare different configurations
+5. **Disable plotting for speed**: Use `--no_plot` when running many experiments
 
+### 🆕 Sample Weighting Tuning Tips
+
+1. **Establish Baseline**: First run without weights as reference
+   ```bash
+   python -m regression_base.main --use_sample_weights=False --exp_name baseline
+   ```
+
+2. **Start Conservative**: Use stepped weights with moderate intensity
+   ```bash
+   --weight_scheme stepped --weight_top_k 5 --weight_top1 10.0 --weight_topk 3.0
+   ```
+
+3. **Monitor Top-1 Accuracy and Regret**:
+   - If improvement is minimal → increase `--weight_top1` (15, 20)
+   - If Top-1 Acc is high but Regret is large → decrease `--weight_top_k`
+   - If RMSE increases significantly but Top-1 Acc improves → this is a normal trade-off
+
+4. **Try Different Schemes**: 
+   - `stepped`: Most intuitive, recommended for beginners
+   - `linear`: Smoother transition
+   - `exponential`: Emphasizes Top-1 more
+
+5. **Add Huber Loss** (if data has outliers):
+   ```bash
+   --use_custom_objective --huber_delta 5000
+   ```
+
+
+# Baseline
+python -m regression_base.main --exp_name baseline
+
+# With feature extension
+python -m regression_base.main --feature_extension --exp_name with_feature_ext
+
+# With problem size standardization
+python -m regression_base.main --std_problem_size --exp_name with_std_problem
+
+# Without tile type encoding
+python -m regression_base.main \
+    --use_tile_type_encoding false \
+    --exp_name no_tile_encoding
+
+# All features combined
+python -m regression_base.main \
+    --feature_extension \
+    --std_problem_size \
+    --exp_name all_features
+```
 Create `experiments/booster_comparison.sh`:
 ```bash
 #!/bin/bash
@@ -313,7 +502,7 @@ Run experiments:
 ./experiments/grid_search_lr.sh
 ```
 
-## 🏃 Batch Processing
+## Batch Processing
 
 Run multiple experiments in parallel:
 ```bash

@@ -62,7 +62,8 @@ def main():
     print("=" * 80)
 
     bst = train_model(
-        X_train, y_train, X_valid, y_valid, valid_df, unique_mi_configs, args
+        X_train, y_train, X_valid, y_valid, valid_df, unique_mi_configs, args,
+        train_df=train_df
     )
 
     # ====================== Step 4: Evaluate Model ======================

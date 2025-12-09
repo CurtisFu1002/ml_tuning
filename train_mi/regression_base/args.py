@@ -42,10 +42,33 @@ def get_args():
     feature_group.add_argument('--feature_extension', action='store_true', default=False,
                               help='Add extended features like gflops_norm')
     
+    # ====================== Sample Weighting (Top-k Emphasis Xgboost Objective) ======================
+    weight_group = parser.add_argument_group('Sample Weighting')
+    weight_group.add_argument('--use_sample_weights', action='store_true', default=True,
+                             help='Use sample weights to emphasize top-k configs')
+    weight_group.add_argument('--weight_top_k', type=int, default=5,
+                             help='Number of top configs to emphasize (k)')
+    weight_group.add_argument('--weight_scheme', type=str, default='linear',
+                             choices=['linear', 'exponential', 'harmonic', 'stepped', 'smooth'],
+                             help='Weight decay scheme for top-k configs')
+    weight_group.add_argument('--weight_top1', type=float, default=10.0,
+                             help='Weight multiplier for top-1 config')
+    weight_group.add_argument('--weight_topk', type=float, default=3.0,
+                             help='Weight multiplier for top-2 to top-k (stepped scheme)')
+    weight_group.add_argument('--weight_base', type=float, default=1.0,
+                             help='Base weight for non-top-k configs')
+    weight_group.add_argument('--use_custom_objective', action='store_true', default=False,
+                             help='Use custom weighted objective function')
+    weight_group.add_argument('--huber_delta', type=float, default=None,
+                             help='Delta for Huber loss (None = use MSE)')
+    
+
     # ====================== XGBoost Hyperparameters ======================
     xgb_group = parser.add_argument_group('XGBoost Hyperparameters')
+    # xgb_group.add_argument('--objective', type=str, default='reg:squarederror',
+    #                       help='XGBoost objective function')
     xgb_group.add_argument('--objective', type=str, default='reg:squarederror',
-                          help='XGBoost objective function')
+                          help='XGBoost objective function (ignored if use_custom_objective)')
     xgb_group.add_argument('--eval_metric', type=str, default='rmse',
                           help='Evaluation metric')
     xgb_group.add_argument('--eta', type=float, default=0.05,
@@ -107,7 +130,7 @@ def get_args():
 
 def get_xgb_params(args):
     """Convert parsed arguments to XGBoost parameter dictionary."""
-    return {
+    params = {
         'objective': args.objective,
         'eval_metric': args.eval_metric,
         'eta': args.eta,
@@ -124,6 +147,10 @@ def get_xgb_params(args):
         'tree_method': args.tree_method,
         'seed': args.random_state
     }
+    if not args.use_custom_objective:
+        params['objective'] = args.objective
+    
+    return params
 
 
 def print_config(args):
@@ -141,6 +168,21 @@ def print_config(args):
     print(f"  - Tile Type Encoding: {args.use_tile_type_encoding}")
     print(f"  - Remove Const Features: {args.remove_const_features}")
     print(f"  - Feature Extension: {args.feature_extension}")
+    
+    # Sample Weighting 
+    print(f"\nSample Weighting:")
+    print(f"  - Use Sample Weights: {args.use_sample_weights}")
+    if args.use_sample_weights:
+        print(f"  - Top-K: {args.weight_top_k}")
+        print(f"  - Scheme: {args.weight_scheme}")
+        print(f"  - Top-1 Weight: {args.weight_top1}")
+        if args.weight_scheme == 'stepped':
+            print(f"  - Top-K Weight: {args.weight_topk}")
+        print(f"  - Base Weight: {args.weight_base}")
+        print(f"  - Custom Objective: {args.use_custom_objective}")
+        if args.huber_delta:
+            print(f"  - Huber Delta: {args.huber_delta}")
+    
     print(f"\nXGBoost Parameters:")
     xgb_params = get_xgb_params(args)
     for key, val in xgb_params.items():
