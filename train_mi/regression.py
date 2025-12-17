@@ -9,9 +9,18 @@ from datetime import datetime
 import sys
 
 # ====================== Configuration ======================
+# --- Data Source Configuration ---
+DATA_SOURCE_MODE = 'separate_files'  # Options: 'single_split', 'separate_files'
+
+# Mode 1: Single CSV (Split into Train/Valid/Test)
 CSV_PATH = 'gflops_data_64.csv'
-# CSV_PATH = 'gflops_data_256_128_64.csv'
-# CSV_PATH = 'synthetic_gflops_256_and_128_new.csv'
+
+# Mode 2: Separate CSVs
+TRAIN_CSV_PATH = 'gflops_data_64.csv'
+VALID_CSV_PATH = 'gflops_data_output_256.csv'   # None  # If None, split from Train. If path string, load as Valid.
+TEST_CSV_PATH = 'gflops_data_256_and_128.csv'
+
+# --- Model & Logging Configuration ---
 MODEL_PATH = 'gflops_final_full.xgb'
 LOG_DIR = 'logs'
 PLOT_DIR = 'plots'
@@ -181,30 +190,74 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
 
 
 # ====================== data preprocessing functions ======================
-def load_data():
-    df = pd.read_csv(CSV_PATH)
-    # unique configs: mi selections
-    unique_mi_configs = df[['mi_idx'] + CANDIDATE_COLS].drop_duplicates().sort_values('mi_idx').reset_index(drop=True)
-    print(f"Loaded {len(df):,} samples, {len(unique_mi_configs)} mi configs")
-    return df, unique_mi_configs
 
-def split_data(df):
+def load_and_prepare_data(feature_config):
     """
-    Spliting data by a problem size (m,n,k)  and each problem size contains 128 mi config
+    Load data based on DATA_SOURCE_MODE, apply feature extension, and split into train/valid/test.
     """
+    extra_features = []
+    unique_mi_configs = None
     
-    # unique problem size m,n,k
-    problems = df[PROBLEM_SIZE_COLS_mnk].drop_duplicates()
+    if DATA_SOURCE_MODE == 'single_split':
+        print(f"Loading data from single source: {CSV_PATH}")
+        df = pd.read_csv(CSV_PATH)
+        
+        # Extract unique configs
+        unique_mi_configs = df[['mi_idx'] + CANDIDATE_COLS].drop_duplicates().sort_values('mi_idx').reset_index(drop=True)
+        print(f"Loaded {len(df):,} samples, {len(unique_mi_configs)} mi configs")
+        
+        # Feature Extension
+        if feature_config['enable']:
+            print(f"Feature Extension Config: {feature_config}")
+            df, extra_features = feature_extension(df, feature_config)
+            print(f"Added {len(extra_features)} extra features: {extra_features}")
+        
+        # Split
+        problems = df[PROBLEM_SIZE_COLS_mnk].drop_duplicates()
+        train_prob, test_prob = train_test_split(problems, test_size=0.1, random_state=RANDOM_STATE)
+        train_prob, valid_prob = train_test_split(train_prob, test_size=0.1, random_state=RANDOM_STATE)
+        
+        train_df = df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+        valid_df = df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+        test_df = df.merge(test_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+        
+    elif DATA_SOURCE_MODE == 'separate_files':
+        print(f"Loading Train from: {TRAIN_CSV_PATH}")
+        train_full_df = pd.read_csv(TRAIN_CSV_PATH)
+        
+        print(f"Loading Test from: {TEST_CSV_PATH}")
+        test_df = pd.read_csv(TEST_CSV_PATH)
+        
+        if VALID_CSV_PATH:
+            print(f"Loading Valid from: {VALID_CSV_PATH}")
+            valid_df = pd.read_csv(VALID_CSV_PATH)
+            train_df = train_full_df
+        else:
+            print("Splitting Valid from Train...")
+            problems = train_full_df[PROBLEM_SIZE_COLS_mnk].drop_duplicates()
+            train_prob, valid_prob = train_test_split(problems, test_size=0.1, random_state=RANDOM_STATE)
+            train_df = train_full_df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+            valid_df = train_full_df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+        
+        # Combine for unique configs to ensure coverage
+        combined_df = pd.concat([train_df, valid_df, test_df], axis=0)
+        unique_mi_configs = combined_df[['mi_idx'] + CANDIDATE_COLS].drop_duplicates().sort_values('mi_idx').reset_index(drop=True)
+        print(f"Total samples: {len(combined_df):,}, {len(unique_mi_configs)} unique mi configs")
+        
+        # Feature Extension (Apply separately)
+        if feature_config['enable']:
+            print(f"Feature Extension Config: {feature_config}")
+            train_df, extra_features = feature_extension(train_df, feature_config)
+            valid_df, _ = feature_extension(valid_df, feature_config)
+            test_df, _ = feature_extension(test_df, feature_config)
+            print(f"Added {len(extra_features)} extra features: {extra_features}")
+        
+    else:
+        raise ValueError(f"Unknown DATA_SOURCE_MODE: {DATA_SOURCE_MODE}")
 
-    train_prob, test_prob = train_test_split(problems, test_size=0.1, random_state=RANDOM_STATE)
-    train_prob, valid_prob = train_test_split(train_prob, test_size=0.1, random_state=RANDOM_STATE)
-    
-    train_df = df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
-    valid_df = df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
-    test_df = df.merge(test_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
-
-    print(f"Train: {len(train_df)//128} probs, Valid: {len(valid_df)//128}, Test: {len(test_df)//128}")
-    return train_df, valid_df, test_df
+    print(f"Train: {len(train_df)//128} probs, Valid: {len(valid_df)//128} probs, Test: {len(test_df)//128} probs")
+    return train_df, valid_df, test_df, unique_mi_configs, extra_features
+        
 
 def prepare_data(df, unique_mi_configs, extra_feature_cols=None, weighted=False):
     config_map = {cfg['mi_idx']: cfg for _, cfg in unique_mi_configs.iterrows()}
@@ -576,17 +629,9 @@ if __name__ == "__main__":
     sys.stdout = Logger(log_file)
     print("="*80)
 
-    df, unique_mi_configs = load_data()
-    
-    extra_features = []
-    if FEATURE_CONFIG['enable']:
-        print(f"Feature Extension Config: {FEATURE_CONFIG}")
-        df, extra_features = feature_extension(df, FEATURE_CONFIG)
-        print(f"Added {len(extra_features)} extra features: {extra_features}")
-    else:
-        print("Feature Extension: Disabled")
+    # Load and Prepare Data (Handles both Single and Separate modes)
+    train_df, valid_df, test_df, unique_mi_configs, extra_features = load_and_prepare_data(FEATURE_CONFIG)
 
-    train_df, valid_df, test_df = split_data(df)
 
     if WEIGHTED_TRAINING:
         X_train, y_train, w_train = prepare_data(train_df, unique_mi_configs, extra_features, weighted=WEIGHTED_TRAINING)
