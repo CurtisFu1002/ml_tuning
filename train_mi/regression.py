@@ -9,18 +9,28 @@ from datetime import datetime
 import sys
 
 # ====================== Configuration ======================
-CSV_PATH = 'gflops_data_256_and_128.csv'
+CSV_PATH = 'gflops_data_64.csv'
+# CSV_PATH = 'gflops_data_256_128_64.csv'
+# CSV_PATH = 'synthetic_gflops_256_and_128_new.csv'
 MODEL_PATH = 'gflops_final_full.xgb'
 LOG_DIR = 'logs'
 PLOT_DIR = 'plots'
 RANDOM_STATE = 42 # 42
-TOP_K_VALUES = [1, 2, 3, 5, 10, 15, 20]
+TOP_K_VALUES = [1, 2, 3, 5, 10, 15, 20, 25, 30, 40]
 
 PROBLEM_SIZE_COLS_mnk = ['m', 'n', 'k']
 CANDIDATE_COLS = ['M', 'N', 'K', 'B', 'MIBlockM', 'WaveTileM', 'WaveTileN', 'WaveM', 'WaveN']
 CONFIG_ID_COL = 'mi_idx'
 
-FEATURE_EXTENSION = False
+WEIGHTED_TRAINING = False
+FEATURE_CONFIG = {
+    'enable': False,          # Master switch
+    'normalization': False,  # gflops_norm (usually low impact for tree models)
+    'boundary': True,        # Remainder features (m % M)
+    'tiles': True,           # Geometric features (tiles_m, total_tiles)
+    'wave': True,            # Wave efficiency features (waves_per_block)
+}
+
 PLOT_DATA = True
 
 # mse base
@@ -74,12 +84,15 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
         topk_contains = {k: 0 for k in TOP_K_VALUES}
         total_problems = 0
 
+        # Metrics for Real Top-k
+
         for (m, n, k), group in self.valid_df.groupby(['m','n','k']):
             total_problems += 1
             
             true_best_gflops = group['gflops'].max()
             true_best_mi = int(group.loc[group['gflops'].idxmax(), 'mi_idx'])
 
+            # Predict all 128 mi in a problem size
             X_val = np.array([
                 [m, n, k] + row[CANDIDATE_COLS].tolist()
                 for _, row in self.unique_mi_configs.iterrows()
@@ -182,43 +195,64 @@ def split_data(df):
     
     # unique problem size m,n,k
     problems = df[PROBLEM_SIZE_COLS_mnk].drop_duplicates()
+
     train_prob, test_prob = train_test_split(problems, test_size=0.1, random_state=RANDOM_STATE)
+    train_prob, valid_prob = train_test_split(train_prob, test_size=0.1, random_state=RANDOM_STATE)
     
     train_df = df.merge(train_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
-    test_df  = df.merge(test_prob,  on=PROBLEM_SIZE_COLS_mnk, how='inner')
-
-    # train : valid = 9 : 1
-    valid_prob = train_prob.sample(frac=0.1, random_state=RANDOM_STATE + 1)
-    valid_df = train_df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
-    train_df = train_df.drop(valid_df.index)
+    valid_df = df.merge(valid_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
+    test_df = df.merge(test_prob, on=PROBLEM_SIZE_COLS_mnk, how='inner')
 
     print(f"Train: {len(train_df)//128} probs, Valid: {len(valid_df)//128}, Test: {len(test_df)//128}")
     return train_df, valid_df, test_df
 
-def prepare_data(df, unique_mi_configs, extra_feature_cols=None):
+def prepare_data(df, unique_mi_configs, extra_feature_cols=None, weighted=False):
     config_map = {cfg['mi_idx']: cfg for _, cfg in unique_mi_configs.iterrows()}
     
-    X, y = [], []
-    for _, row in df.iterrows():
-        mi = row['mi_idx']
-        if mi in config_map:
-            cfg = config_map[mi]
-            # get the (m, n, k) of this row
-            features = [row['m'], row['n'], row['k']]
-            # append the extended mi config ['M', 'N', 'K', 'B', 'MIBlockM', 'WaveTileM', 'WaveTileN', 'WaveM', 'WaveN']
-            for c in CANDIDATE_COLS:
-                features.append(cfg[c])
+    X, y, weights = [], [], []
+    for (m, n, k), group in df.groupby(['m', 'n', 'k']):
+        # Calculate each problem size ground truth ranking
+        sorted_group = group.sort_values('gflops', ascending=False).reset_index(drop=True)
+        mi_to_rank = {int(row['mi_idx']): idx+1 for idx, row in sorted_group.iterrows()}
+        
+        for _, row in group.iterrows():
+            mi = row['mi_idx']
+            if mi in config_map:
+                cfg = config_map[mi]
+                features = [m, n, k]
+                for c in CANDIDATE_COLS:
+                    features.append(cfg[c])
+                    
+                if extra_feature_cols is not None:
+                    for ext_col in extra_feature_cols:
+                        features.append(row[ext_col])
                 
-            if extra_feature_cols is not None:
-                for ext_col in extra_feature_cols:
-                    features.append(row[ext_col])
-            
-            X.append(features)
-            y.append(row['gflops'])
-    return np.array(X, dtype=np.float32), np.array(y, dtype=np.float32)
+                X.append(features)
+                y.append(row['gflops'])
+
+                # calculate Sample Weight: Top-1: 10x, Top-2: 5x, Top-3: 3x, Others: 1x
+                if weighted:
+                    rank = mi_to_rank.get(int(mi), 999)
+                    if rank == 1:
+                        weight = 30.0
+                    elif rank == 2:
+                        weight = 5.0
+                    elif rank == 3:
+                        weight = 3.0
+                    else:
+                        weight = 1.0
+                    weights.append(weight)
+    
+    X = np.array(X, dtype=np.float32)
+    y = np.array(y, dtype=np.float32)
+    
+    if weighted:
+        return X, y, np.array(weights, dtype=np.float32)
+    else:
+        return X, y
 
 
-def feature_extension(df):
+def feature_extension(df, config):
     """
     Add an col in df:
     1. with in one problem size 'gflops_norm' = (curr_gflops - min_gflops) / (max_gflops - min_gflops)
@@ -226,16 +260,56 @@ def feature_extension(df):
     """
     
     # for every problem (m,n,k) calculate min_g、max_g
-    stats = df.groupby(['m', 'n', 'k'])['gflops'].agg(
-        min_g='min',
-        max_g='max'
-    ).reset_index()
-    # merge the max min of each problem size min_g / max_g
-    df = df.merge(stats, on=['m', 'n', 'k'], how='left')
-    df['gflops_norm'] = (df['gflops'] - df['min_g']) / (df['max_g'] - df['min_g'] + 1e-8)
-    df = df.drop(columns=['min_g', 'max_g'])
+    if not config.get('enable', False):
+        return df, []
 
-    return df
+    df = df.copy()
+    new_features = []
+
+    # 1. Normalization Features
+    if config.get('normalization', False):
+        stats = df.groupby(['m', 'n', 'k'])['gflops'].agg(
+            min_g='min',
+            max_g='max'
+        ).reset_index()
+        df = df.merge(stats, on=['m', 'n', 'k'], how='left')
+        df['gflops_norm'] = (df['gflops'] - df['min_g']) / (df['max_g'] - df['min_g'] + 1e-8)
+        df = df.drop(columns=['min_g', 'max_g'])
+        new_features.append('gflops_norm')
+
+    # 2. Boundary Waste Features
+    if config.get('boundary', False):
+        df['rem_m_M'] = df['m'] % df['M']
+        df['rem_n_N'] = df['n'] % df['N']
+        df['rem_k_K'] = df['k'] % df['K']
+        new_features.extend(['rem_m_M', 'rem_n_N', 'rem_k_K'])
+    
+    # 3. Tile Counts (Geometric Features)
+    if config.get('tiles', False):
+        # Use ceil because tiling usually rounds up
+        df['tiles_m'] = np.ceil(df['m'] / df['M'])
+        df['tiles_n'] = np.ceil(df['n'] / df['N'])
+        df['tiles_k'] = np.ceil(df['k'] / df['K'])
+        df['total_tiles'] = df['tiles_m'] * df['tiles_n'] * df['tiles_k']
+        new_features.extend(['tiles_m', 'tiles_n', 'tiles_k', 'total_tiles'])
+    
+    # 4. Wave Efficiency & Occupancy Hint
+    if config.get('wave', False):
+        # Number of waves per block (assuming WaveTile is the basic execution unit)
+        df['waves_per_block'] = (df['M'] // df['WaveTileM']) * (df['N'] // df['WaveTileN'])
+        
+        # Total estimated waves (helps model judge if GPU is saturated)
+        # Ensure total_tiles exists if 'tiles' config was not enabled
+        if 'total_tiles' not in df.columns:
+             df['temp_tiles'] = np.ceil(df['m'] / df['M']) * np.ceil(df['n'] / df['N']) * np.ceil(df['k'] / df['K'])
+             df['total_waves_est'] = df['temp_tiles'] * df['waves_per_block']
+             df.drop(columns=['temp_tiles'], inplace=True)
+        else:
+             df['total_waves_est'] = df['total_tiles'] * df['waves_per_block']
+             
+        new_features.extend(['waves_per_block', 'total_waves_est'])
+
+    return df, new_features
 
 def plot_eval(results_df,
               rank_of_true_best_list,
@@ -293,6 +367,7 @@ def evaluate(bst, test_df, unique_mi_configs, plot=True):
     topk_correct = {k: 0 for k in TOP_K_VALUES}
     topk_regret = {k: [] for k in TOP_K_VALUES}
     real_topk_mean_rank = {k: [] for k in TOP_K_VALUES}
+    real_top_errors = {k: [] for k in [1,2,3,4,5]}  # 新增
     total = 0
     regrets = []
     results = []
@@ -313,6 +388,7 @@ def evaluate(bst, test_df, unique_mi_configs, plot=True):
         # ranking (local)
         true_sorted_local_idx = np.argsort(actual_gflops)[::-1]
         true_mi_indices = group.iloc[true_sorted_local_idx][CONFIG_ID_COL].astype(int).values
+        true_gflops_list = actual_gflops[true_sorted_local_idx]  # 新增
         
         true_best_local_idx = true_sorted_local_idx[0]
         true_mi_idx = int(group.iloc[true_best_local_idx][CONFIG_ID_COL])
@@ -333,6 +409,19 @@ def evaluate(bst, test_df, unique_mi_configs, plot=True):
         
         pred_sorted_global_idx = np.argsort(pred_scores)[::-1]
         pred_mi_indices = [int(unique_mi_configs.iloc[i][CONFIG_ID_COL]) for i in pred_sorted_global_idx]
+
+        # Calculate Real Top-k MRE
+        mi_to_pred = {int(unique_mi_configs.iloc[i]['mi_idx']): pred_scores[i]
+                     for i in range(len(unique_mi_configs))}
+        
+        for kk in [1,2,3,4,5]:
+            if len(true_mi_indices) >= kk:
+                for i in range(kk):
+                    mi = true_mi_indices[i]
+                    true_val = true_gflops_list[i]
+                    pred_val = mi_to_pred.get(mi, 0)
+                    mre = abs(pred_val - true_val) / true_val if true_val > 0 else 0
+                    real_top_errors[kk].append(mre)
         
         # errors on measured configs
         for global_idx in range(n_configs):
@@ -401,14 +490,68 @@ def evaluate(bst, test_df, unique_mi_configs, plot=True):
     rmse = np.sqrt(np.mean(error_lists['rmse']))
     mre = np.mean(error_lists['mre'])
     
+    top1_acc = topk_correct[1] / total
+    mean_regret = np.mean(regrets)
+    mean_rank = np.mean(rank_of_true_best_list)
+    
+    print("\n" + "="*80)
+    print("EVALUATION RESULTS:")
+    print("="*80)
+    
+    # RealTopErr
+    print("  RealTopErr →", end="")
+    for k in [1,2,3,4,5]:
+        if real_top_errors[k]:
+            avg_mre = np.mean(real_top_errors[k])
+            print(f" T{k}:{avg_mre:5.1%}", end="")
+        else:
+            print(f" T{k}:  N/A ", end="")
+    print("  |")
+    
+    # Top-1 Accuracy, Regret, Rank
+    print(f"\nTop-1 Acc: {top1_acc:6.1%} | "
+          f"Regret: {mean_regret:6.2%} | "
+          f"TrueBest Rank: {mean_rank:5.1f}")
+    
+    # Top-k Recall
+    print(f"\nTop-k Recall:")
+    for k in TOP_K_VALUES:
+        recall = topk_correct[k] / total
+        print(f"  R@{k:2d}: {recall:6.1%}", end="")
+        if k in [5, 15]:
+            print()
+    
+    # Prediction Errors
+    print(f"\n\nPrediction Errors:")
+    print(f"  MAE:  {mae:8.2f}")
+    print(f"  RMSE: {rmse:8.2f}")
+    print(f"  MRE:  {mre:7.1%}")
+    
+    # Top-k Regret
+    print(f"\nMean Top-k Regret:")
+    for k in TOP_K_VALUES:
+        print(f"  Top-{k:2d}: {np.mean(topk_regret[k]):6.2%}", end="")
+        if k in [5, 15]:
+            print()
+    
+    # Real Top-k Mean Rank
+    print(f"\n\nMean Rank of Real Top-k:")
+    for k in TOP_K_VALUES:
+        print(f"  Top-{k:2d}: {np.mean(real_topk_mean_rank[k]):6.2f}", end="")
+        if k in [5, 15]:
+            print()
+    print("\n" + "="*80)
+    
     # metrics & plot_data
     metrics = {
+        'top1_accuracy': float(top1_acc),
         'topk_accuracy': {k: topk_correct[k]/total for k in TOP_K_VALUES},
-        'regret_mean': float(np.mean(regrets)),
-        'true_best_rank_mean': float(np.mean(rank_of_true_best_list)),
+        'regret_mean': float(mean_regret),
+        'true_best_rank_mean': float(mean_rank),
         'prediction_errors': {'mae': float(mae), 'rmse': float(rmse), 'mre': float(mre)},
         'topk_regret_mean': {k: float(np.mean(topk_regret[k])) for k in TOP_K_VALUES},
         'real_topk_mean_rank': {k: float(np.mean(real_topk_mean_rank[k])) for k in TOP_K_VALUES},
+        'real_top_errors': {k: float(np.mean(real_top_errors[k])) for k in [1,2,3,4,5] if real_top_errors[k]},
     }
     
     if plot:
@@ -435,26 +578,35 @@ if __name__ == "__main__":
 
     df, unique_mi_configs = load_data()
     
-    extra_features = None
-    if FEATURE_EXTENSION:
-        df = feature_extension(df)
-        # extend extra features to the list for future
-        extra_features = ['gflops_norm']
+    extra_features = []
+    if FEATURE_CONFIG['enable']:
+        print(f"Feature Extension Config: {FEATURE_CONFIG}")
+        df, extra_features = feature_extension(df, FEATURE_CONFIG)
+        print(f"Added {len(extra_features)} extra features: {extra_features}")
+    else:
+        print("Feature Extension: Disabled")
 
     train_df, valid_df, test_df = split_data(df)
 
-    X_train, y_train = prepare_data(train_df, unique_mi_configs, extra_features)
-    X_valid, y_valid = prepare_data(valid_df, unique_mi_configs, extra_features)
+    if WEIGHTED_TRAINING:
+        X_train, y_train, w_train = prepare_data(train_df, unique_mi_configs, extra_features, weighted=WEIGHTED_TRAINING)
+        X_valid, y_valid, w_valid = prepare_data(valid_df, unique_mi_configs, extra_features, weighted=WEIGHTED_TRAINING)
+    else:
+        X_train, y_train = prepare_data(train_df, unique_mi_configs, extra_features, weighted=WEIGHTED_TRAINING)
+        X_valid, y_valid = prepare_data(valid_df, unique_mi_configs, extra_features, weighted=WEIGHTED_TRAINING)
 
-    dtrain = xgb.DMatrix(X_train, label=y_train)
-    dvalid = xgb.DMatrix(X_valid, label=y_valid)
+    if not WEIGHTED_TRAINING:
+        w_train = np.ones_like(y_train, dtype=np.float32)
+        w_valid = np.ones_like(y_valid, dtype=np.float32)
+    dtrain = xgb.DMatrix(X_train, label=y_train, weight=w_train)
+    dvalid = xgb.DMatrix(X_valid, label=y_valid, weight=w_valid)
 
     bst = xgb.train(
         XGB_PARAMS,
         dtrain,
-        num_boost_round=300,
+        num_boost_round=500,
         evals=[(dtrain,'train'), (dvalid,'valid')],
-        early_stopping_rounds=200,
+        early_stopping_rounds=400,
         callbacks=[ValidRankingMetrics(valid_df, unique_mi_configs, period=50)],
         # callbacks=[ValidRankingMetrics(test_df, unique_mi_configs, period=50)],
         verbose_eval=50
