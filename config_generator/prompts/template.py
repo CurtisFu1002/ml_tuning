@@ -21,6 +21,19 @@ and the GPU spec is:
 ZERO_SHOT_COT_TRIGGER_1 = "Let's think step by step"
 ZERO_SHOT_COT_TRIGGER_2 = "Let's work this out in a step by step way to be sure we have the best performance"
 
+FEW_SHOT_COT_EXAMPLES = """For the follow problem sizes, the corresponding winner matrix instructions are:
+- Example1
+    - ProblemSize: [1472, 576, 1, 4096]
+    - MatrixInstruction: [16, 16, 16, 1, 1, 1, 1, 4, 1]
+- Example2
+    - ProblemSize: [1472, 832, 1, 4096]
+    - MatrixInstruction: [16, 16, 16, 1, 1, 3, 1, 4, 1]
+- Example3
+    - ProblemSize: [1472, 1856, 1, 4096]
+    - MatrixInstruction: [16, 16, 16, 1, 1, 7, 1, 2, 2]
+
+Please find the best matrix instruction for the targeting problem size.
+"""
 
 def get_user_prompt_v1(config: str, gpu_spec: str) -> str:
     """Generate prompt for config optimization without logic file."""
@@ -83,6 +96,29 @@ Note that the `TestParameters` and `GlobalParameters` should not be changed in t
 """
 
 
+def get_user_prompt_v1_3(config: str, gpu_spec: str) -> str:
+    """Generate prompt for config optimization without logic file."""
+    return f"""{ROLE}
+
+{TASK_V1}
+
+{CONTEXT_V1.format(config=config, gpu_spec=gpu_spec)}
+
+{ZERO_SHOT_COT_TRIGGER_1}. Please tell me how to modify the config to the better performance with the following structure:
+
+1. Initial observations
+2. Potential optimization
+3. Expected performance improvement
+4. Modified config in YAML format
+
+Delete the MatrixInstruction candidate options that are not valid or sub-optimal for the given GPU, and provide the modified config in YAML format.
+
+Note that the `TestParameters` and `GlobalParameters` should not be changed in the output config!
+
+{FEW_SHOT_COT_EXAMPLES}
+"""
+
+
 def get_user_prompt_v2(config: str, gpu_spec: str, logic: str) -> str:
     """Generate prompt for logic file generation."""
     return f"""You are a performance engineer at AMD working on optimizing the GEMM kernels for hipBLASLt in ROCm libraries.
@@ -127,6 +163,8 @@ def create_prompts(version: str, config: str, gpu_spec: str, logic: str | None =
             user_prompt = get_user_prompt_v1_1(config, gpu_spec)
         case "v1_2":
             user_prompt = get_user_prompt_v1_2(config, gpu_spec)
+        case "v1_3":
+            user_prompt = get_user_prompt_v1_3(config, gpu_spec)
         case "v2":
             user_prompt = get_user_prompt_v2(config, gpu_spec, logic_text)
         case _:

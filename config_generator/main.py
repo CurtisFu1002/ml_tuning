@@ -348,7 +348,7 @@ def evaluate(
             help="Number of times to run the evaluation",
         ),
     ] = 1,
-    version: Annotated[str, typer.Option(help="Version of prompt strategies")] = "v1_2",
+    version: Annotated[str, typer.Option(help="Version of prompt strategies")] = "v1_3",
     model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
     gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
     prebuilt_client: Annotated[
