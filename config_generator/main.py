@@ -470,10 +470,20 @@ def evaluate(
             round(performance_retension, 4),
             winner_matched,
         ]
+        winner_consistency = df["Winner Matched"].mean()
 
         print("\n[Evaluation Summary]")
         print(df.to_string(index=False))  # type: ignore
+        print(f"Winner Consistency = {winner_consistency}")
+
         df.to_csv(output_dir / "evaluation_summary.csv", index=False)
+        df.to_markdown(output_dir / "evaluation_summary.md", index=False)
+        md_file = Path(output_dir / "evaluation_summary.md")
+        md_file.write_text(
+            "# Evaluation Summary\n\n"
+            + md_file.read_text()
+            + f"\n\nWinner Consistency = {winner_consistency}\n"
+        )
 
 
 if __name__ == "__main__":
