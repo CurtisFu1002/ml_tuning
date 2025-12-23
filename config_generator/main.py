@@ -490,5 +490,51 @@ def evaluate(
         )
 
 
+@app.command()
+def find_winner(
+    benchmark_csv: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the benchmark CSV file to analyze",
+        ),
+    ],
+    benchmark_yaml: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the benchmark YAML file to analyze",
+        ),
+    ],
+    index: Annotated[
+        int,
+        typer.Option(
+            help="Index of kernel",
+        ),
+    ] = 0,
+) -> None:
+    """
+    Find the winning kernel configuration from a Tensile benchmark CSV file.
+    """
+    def get_problem_size(d: dict[str, Any]) -> list[int]:
+        return d.get("Exact")[:4]
+
+    def get_matrix_inst(d: dict[str, Any]) -> list[int]:
+        return [
+            *d.get("MatrixInstruction"),
+            d.get("MIBlock")[-2],
+            *d.get("MIWaveTile"),
+            *d.get("MIWaveGroup"),
+        ]
+
+    df = pd.read_csv(benchmark_csv)
+    winner_indices: list[int] = [int(i) for i in df[" WinnerIdx"].values]
+    print(f"Winning Index: {winner_indices[index]}")
+
+    logics = yaml.safe_load(Path(benchmark_yaml).read_text())
+    problem_size = get_problem_size(logics[1].get("ProblemSizes")[index])
+    matrix_instruction = get_matrix_inst(logics[4:][index])
+    print(f"ProblemSize: {problem_size}")
+    print(f"MatrixInstruction: {matrix_instruction}")
+
+
 if __name__ == "__main__":
     app()
