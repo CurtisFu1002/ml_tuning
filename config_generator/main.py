@@ -12,9 +12,13 @@ import typer
 import yaml
 from Tensile import Tensile
 
-from config_generator.llm import get_llm_response, get_llm_response_parsed
+from config_generator.llm import get_llm_response, get_llm_response_parsed, call_llm
 from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
-from config_generator.prompts.template import get_user_prompt_v1, get_user_prompt_v2
+from config_generator.prompts.template import (
+    get_user_prompt_v1,
+    get_user_prompt_v2,
+    create_prompts,
+)
 from config_generator.utils import extract_yaml, write_output_files
 
 app = typer.Typer()
@@ -308,9 +312,7 @@ def autotune(
 
         print("[Validation Result]")
         if valid:
-            print(
-                "Success: LLM-integrated tuning matches Tensile-only tuning."
-            )
+            print("Success: LLM-integrated tuning matches Tensile-only tuning.")
         else:
             print(
                 "Failed: Results differ between LLM-integrated and Tensile-only tuning."
@@ -346,6 +348,7 @@ def evaluate(
             help="Number of times to run the evaluation",
         ),
     ] = 1,
+    version: Annotated[str, typer.Option(help="Version of prompt strategies")] = "v1_2",
     model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
     gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
     prebuilt_client: Annotated[
@@ -422,15 +425,16 @@ def evaluate(
 
         # Generate output
         t = time.time()
-        prompt, response, yaml_content = _generate_helper(
-            config_text, gpu_spec, model_name, logic_text=None
-        )
+        prompts = create_prompts(version, config_text, gpu_spec)
+        response = call_llm(model_name, prompts)
+        yaml_content = yaml.safe_dump(response, sort_keys=False)
         time_llm = time.time() - t
+        prompt = prompts[-1]["content"]
 
         # Write output files
         output_path = (output_dir / f"run_{run_idx + 1}").absolute()
         generated_file = output_path / "modified.yaml"
-        write_output_files(generated_file, prompt, response, yaml_content)
+        write_output_files(generated_file, prompt, str(response), yaml_content)
 
         # Run Tensile with generated config
         t = time.time()
