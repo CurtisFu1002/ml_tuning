@@ -339,7 +339,7 @@ Create `experiments/grid_search_lr.sh`:
 
 for lr in 0.01 0.05 0.1 0.2
 do
-### 🆕 Sample Weighting Ablation Study
+###  Sample Weighting Ablation Study
 
 Create `experiments/weight_ablation.sh`:
 ```bash
@@ -403,7 +403,7 @@ done
 4. **Compare results**: Use the summary JSON files to compare different configurations
 5. **Disable plotting for speed**: Use `--no_plot` when running many experiments
 
-### 🆕 Sample Weighting Tuning Tips
+### Sample Weighting Tuning Tips
 
 1. **Establish Baseline**: First run without weights as reference
    ```bash
