@@ -1,0 +1,40 @@
+================================================================================
+Tensile MI Configuration Optimization Summary
+================================================================================
+
+Model Path: ../model/G3_1500round.xgb
+Original YAML: ./speedup_test_logic.yaml
+Output Directory: optimal_configs
+Top-K: 20
+
+Total Problem Sizes: 3
+Total Execution Time: 1.1248s
+Average Time per Problem: 0.3749s
+
+Average MI Configuration Reduction: 84.38%
+
+--------------------------------------------------------------------------------
+Per Problem Size Details:
+--------------------------------------------------------------------------------
+
+Problem #0: M=576, N=576, B=1, K=4096
+  MI configs: 128 → 20 (reduced 84.4%)
+  Predicted GFLOPS: 28960.09 (top-1) ~ 14306.71 (top-20)
+  Top-5 MI indices: [51, 68, 50, 52, 49]
+  Prediction time: 0.1775s
+  Output file: optimal_m576_n576_b1_k4096_top20.yaml
+
+Problem #1: M=4288, N=4288, B=1, K=4096
+  MI configs: 128 → 20 (reduced 84.4%)
+  Predicted GFLOPS: 110341.30 (top-1) ~ 90561.09 (top-20)
+  Top-5 MI indices: [95, 75, 123, 67, 111]
+  Prediction time: 0.1711s
+  Output file: optimal_m4288_n4288_b1_k4096_top20.yaml
+
+Problem #2: M=8128, N=8128, B=1, K=4096
+  MI configs: 128 → 20 (reduced 84.4%)
+  Predicted GFLOPS: 74607.92 (top-1) ~ 61759.13 (top-20)
+  Top-5 MI indices: [75, 91, 95, 123, 63]
+  Prediction time: 0.1655s
+  Output file: optimal_m8128_n8128_b1_k4096_top20.yaml
+

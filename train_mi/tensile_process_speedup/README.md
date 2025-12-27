@@ -1,55 +1,68 @@
-# Tensile MI Configuration Optimizer
+# Tensile MI Configuration Optimizer & Benchmarking Tool
 
-XGBoost-based optimizer for Tensile Matrix Instruction (MI) configurations. This tool uses machine learning to predict GFLOPS performance and select top-K MI configurations for each problem size, significantly reducing tuning time.
+An end-to-end toolkit for optimizing Tensile Matrix Instruction (MI) configurations using XGBoost. This tool predicts GFLOPS performance to select the best configurations, runs benchmarks, and analyzes the speedup achieved compared to baseline.
+![](./speedup_process.png)
 
 ## Features
 
-- **ML-Based Prediction**: Uses XGBoost model to predict GFLOPS for all MI configurations
-- **Per-Problem Optimization**: Generates optimized YAML for each problem size independently
-- **Configurable Top-K**: Select top N configurations based on predicted performance
-- **Format Preservation**: Maintains original YAML structure, comments, and formatting
-- **Time Tracking**: Reports prediction time and optimization metrics
+- **ML-Based Optimization**: Uses XGBoost to predict and select top-K MI configurations.
+- **Per-Problem Generation**: Creates optimized YAML files for each problem size independently.
+- **Automated Benchmarking**: Runs Tensile benchmarks for generated configurations.
+- **Speedup Analysis**: Calculates time savings and speedup ratios vs. baseline.
+- **Format Preservation**: Maintains original YAML structure and comments.
 
 ## Prerequisites
 
 ```bash
-# Install required packages
+# Install required Python packages
 pip install ruamel.yaml xgboost pandas numpy
 ```
 
-## Quick Start
+## Quick Start Guide
 
-### 1. Grant Execution Permission
+### 1. Optimization (Generate Configs)
 
-```bash
-chmod +x run_optimize.sh
-```
-
-### 2. Run Optimization (Default: Top-20)
+Generate optimized YAML files containing only the top-20 predicted configurations.
 
 ```bash
-./run_optimize.sh
+chmod +x run_optimize_config_yaml_gen.sh
+./run_optimize_config_yaml_gen.sh
 ```
+*Output: `./optimal_configs/*.yaml`*
 
-### 3. Custom Configuration
+### 2. Benchmarking (Measure Performance)
+
+Run Tensile benchmarks on the optimized configurations.
 
 ```bash
-# Specify different Top-K value
-python3 predict_mi_and_config_gen.py \
-    --model ./model/G3_1500round.xgb \
-    --yaml ./speedup_test_logic.yaml \
-    --output-dir ./optimal_configs \
-    --top-k 15
+chmod +x run_optimal_benchmark.sh
+./run_optimal_benchmark.sh \
+    ./optimal_configs \
+    /workspace/rocm-libraries/projects/hipblaslt/tensilelite/mi_tune \
+    ./benchmark_results \
+    0
+```
+*Output: `./benchmark_results/timing_summary.txt`*
 
-# Customize all parameters
-python3 predict_mi_and_config_gen.py \
-    --model ../model/G3_1500round.xgb \
-    --yaml ./my_config.yaml \
-    --output-dir ./my_output \
-    --top-k 10
+### 3. Analysis (Calculate Speedup)
+
+Compare the optimized results against a baseline (optional).
+
+```bash
+python3 analyze_speedup.py \
+    --baseline ./baseline_results/timing_summary.txt \
+    --optimized ./benchmark_results/timing_summary.txt
 ```
 
-## Command Line Arguments
+---
+
+## Detailed Usage
+
+### 1. Configuration Optimizer (`predict_mi_and_config_gen.py`)
+
+Predicts performance and generates reduced YAML files.
+
+**Arguments:**
 
 | Argument | Default | Description |
 |----------|---------|-------------|
@@ -58,177 +71,109 @@ python3 predict_mi_and_config_gen.py \
 | `--output-dir` | `./optimal_configs` | Output directory for optimized YAMLs |
 | `--top-k` | `20` | Number of top MI configurations to keep |
 
-## Workflow
-
-1. **Load Model**: Loads pre-trained XGBoost model for GFLOPS prediction
-2. **Extract Configurations**: Parses input YAML to extract MI configs and problem sizes
-3. **Predict Performance**: For each problem size, predicts GFLOPS for all 128 MI configurations
-4. **Select Top-K**: Ranks MI configs by predicted GFLOPS and selects top K
-5. **Generate YAML**: Creates optimized YAML with only top-K MI configs for each problem
-6. **Generate Report**: Produces summary report with optimization metrics
-
-## Input YAML Format
-
-Your input YAML should contain:
-
-```yaml
-BenchmarkProblems:
-  -
-    - # ProblemType
-      OperationType: GEMM
-      DataType: h
-      # ... other problem type parameters
-    - # BenchmarkProblemSizeGroup
-      ForkParameters:
-        - MatrixInstruction:
-          - [16, 16, 16, 1, 1, 1, 1, 4, 1] #0
-          - [16, 16, 16, 1, 1, 2, 1, 4, 1] #1
-          # ... 128 MI configurations total
-      BenchmarkFinalParameters:
-        - ProblemSizes:
-          - Exact: [576, 576, 1, 4096]
-          - Exact: [4288, 4288, 1, 4096]
-          # ... multiple problem sizes
+**Example:**
+```bash
+python3 predict_mi_and_config_gen.py --top-k 15 --output-dir ./optimal_top15
 ```
 
-## Output Structure
+### 2. Benchmark Runner (`run_optimal_benchmark.sh`)
 
-```
-optimal_configs/
-├── optimal_m576_n576_b1_k4096_top20.yaml
-├── optimal_m4288_n4288_b1_k4096_top20.yaml
-├── optimal_m8128_n8128_b1_k4096_top20.yaml
-└── optimization_summary_top20.txt
-```
+Executes Tensile tuning for all YAML files in a directory and logs execution time.
 
-### Output YAML Format
-
-Each optimized YAML contains:
-- **Same structure** as input YAML
-- **Only top-K MI configurations** (e.g., 20 out of 128)
-- **Single problem size** per file
-- **Preserved comments** and formatting
-
-Example:
-
-```yaml
-ForkParameters:
-  - MatrixInstruction:
-    - [32, 32, 8, 1, 1, 2, 1, 1, 4] #51
-    - [16, 16, 16, 1, 1, 1, 5, 2, 2] #68
-    - [16, 16, 16, 1, 1, 3, 2, 1, 4] #50
-    # ... top 20 configurations
-BenchmarkFinalParameters:
-  - ProblemSizes:
-    - Exact: [576, 576, 1, 4096]  # Single problem size
+**Syntax:**
+```bash
+./run_optimal_benchmark.sh <optimal_dir> <build_dir> <result_dir> <gpu_id>
 ```
 
-## Optimization Summary Report
-
-The summary report (`optimization_summary_top20.txt`) includes:
-
-- Model and configuration paths
-- Total problem sizes processed
-- Execution time metrics
-- MI configuration reduction rate
-- Per-problem details:
-  - Original vs optimized MI count
-  - Predicted GFLOPS range
-  - Top-5 MI indices
-  - Prediction time
-
-Example:
-
-```
-Problem #0: M=576, N=576, B=1, K=4096
-  MI configs: 128 → 20 (reduced 84.4%)
-  Predicted GFLOPS: 245.67 (top-1) ~ 198.32 (top-20)
-  Top-5 MI indices: [51, 68, 50, 52, 49]
-  Prediction time: 0.0234s
+**Example:**
+```bash
+# Run on GPU 1
+./run_optimal_benchmark.sh ./optimal_configs /path/to/tensile/build ./results_gpu1 1
 ```
 
-## Performance Benefits
+### 3. Speedup Analyzer (`analyze_speedup.py`)
 
-- **Tuning Time Reduction**: ~84% fewer configurations to test (128 → 20)
-- **Fast Prediction**: < 0.1s per problem size
-- **Accuracy**: Top-20 captures best configurations with high probability
-- **Scalability**: Process multiple problem sizes in parallel
+Parses timing summaries to calculate efficiency gains.
 
-## Model Features
+**Example Output:**
+```text
+Baseline Configuration:
+  Total execution time : 5420s
+  Average per YAML     : 1807s
 
-The XGBoost model uses these features for prediction:
+Optimized Configuration:
+  Total execution time : 801s
+  Average per YAML     : 267s
 
-| Feature | Description |
-|---------|-------------|
-| `m`, `n`, `k` | Problem size dimensions |
-| `M`, `N`, `K` | MI block dimensions |
-| `B` | Batch size |
-| `MIBlockM` | MI block M parameter |
-| `WaveTileM`, `WaveTileN` | Wave tile sizes |
-| `WaveM`, `WaveN` | Wave dimensions |
+Speedup Results:
+  Speedup ratio        : 6.77x
+  Time saved           : 4619s (77.0 min)
+  Time reduction       : 85.2%
+```
+
+---
+
+## Workflow & File Structure
+
+### Input YAML Format
+The tool expects a standard Tensile tuning YAML containing a list of `MatrixInstruction` and `ProblemSizes`.
+
+### Output Directory Structure
+
+```
+.
+├── optimal_configs/                    # Generated by run_optimize.sh
+│   ├── optimal_m576_n576_b1_k4096_top20.yaml
+│   └── ...
+├── benchmark_results/                  # Generated by run_optimal_benchmark.sh
+│   ├── logs/
+│   │   └── optimal_m576_n576_b1_k4096_top20.log
+│   ├── optimal_m576_n576_b1_k4096_top20/
+│   └── timing_summary.txt              # Key file for analysis
+└── optimization_summary_top20.txt      # Report from optimization step
+```
 
 ## Troubleshooting
 
 ### Model File Not Found
-```bash
-Error: Model file not found: ../model/G3_1500round.xgb
 ```
-**Solution**: Check model path and ensure file exists
-
-### YAML Parse Error
-```bash
-Error: Unable to extract MI configs or Problem Sizes
+Error: Model file not found: ...
 ```
-**Solution**: Verify input YAML format matches expected structure
+**Fix**: Ensure the path to `G3_1500round.xgb` is correct in `run_optimize.sh`.
 
-### Import Error
-```bash
-ModuleNotFoundError: No module named 'ruamel'
+### Tensile Binary Not Found
 ```
-**Solution**: Install dependencies:
-```bash
-pip install ruamel.yaml xgboost pandas numpy
+Error: Tensile binary not found at ...
 ```
+**Fix**: Update the `BUILD_DIR` variable in `run_optimal_benchmark.sh` to point to your `tensilelite/mi_tune` directory.
 
-## Advanced Usage
+### Permission Denied
+**Fix**: Run `chmod +x *.sh` to make scripts executable.
 
-### Batch Processing Multiple YAMLs
+## Advanced Usage: Parallel Benchmarking
+
+To speed up benchmarking by utilizing multiple GPUs:
 
 ```bash
 #!/bin/bash
-for yaml_file in configs/*.yaml; do
-    python3 predict_mi_and_config_gen.py \
-        --model ../model/G3_1500round.xgb \
-        --yaml "$yaml_file" \
-        --output-dir "./optimal_$(basename $yaml_file .yaml)" \
-        --top-k 20
+# Run on GPUs 0, 1, 2, 3 simultaneously
+for gpu in 0 1 2 3; do
+    (
+        ./run_optimal_benchmark.sh \
+            ./optimal_configs \
+            /path/to/tensile/build \
+            ./results_gpu${gpu} \
+            ${gpu}
+    ) &
 done
-```
-
-### Custom Top-K Values
-
-Test different Top-K values to find optimal trade-off:
-
-```bash
-for k in 10 15 20 25 30; do
-    python3 predict_mi_and_config_gen.py \
-        --model ../model/G3_1500round.xgb \
-        --yaml ./speedup_test_logic.yaml \
-        --output-dir "./optimal_top${k}" \
-        --top-k $k
-done
+wait
+echo "All benchmarks completed."
 ```
 
 ## Files
 
-- `predict_mi_and_config_gen.py`: Main optimization script
-- `run_optimize.sh`: Convenience shell script
-- `speedup_test_logic.yaml`: Example input configuration
-
-## License
-
-Internal AMD tool for Tensile optimization workflow.
-
-## Contact
-
-For questions or issues, contact the ML tuning team.
+- `predict_mi_and_config_gen.py`: Core optimization logic.
+- `run_optimize_config_yaml_gen.sh`: Wrapper script for optimization.
+- `run_optimal_benchmark.sh`: Script to run Tensile and measure time.
+- `analyze_speedup.py`: Script to compare baseline vs. optimized timing.
+- `speedup_test_logic.yaml`: Example input configuration.
