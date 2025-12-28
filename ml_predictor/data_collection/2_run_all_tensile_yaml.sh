@@ -6,18 +6,18 @@
 # chmod +x 2_run_all_tensile_yaml.sh
 
 # ./2_run_all_tensile_yaml.sh \
-#   /workspace/ml_tuning/baseline_data_infra/tuning_batches_104CU_test \
+#   /workspace/ml_tuning/ml_predictor/data_collection/tuning_batches_104CU_test \
 #   /workspace/rocm-libraries/projects/hipblaslt/tensilelite/mi_tune \
-#   /workspace/ml_tuning/baseline_data_infra/tuning_results_104CU \
+#   /workspace/ml_tuning/ml_predictor/data_collection/tuning_results_104CU \
 #   "1 2 3"
 # ======================================================================
 
 # -----------------------------
 # Command-line arguments
 # -----------------------------
-YAML_DIR=${1:-/workspace/ml_tuning/baseline_data_infra/tuning_batches_104CU_test}
+YAML_DIR=${1:-/workspace/ml_tuning/ml_predictor/data_collection/tuning_batches_104CU_test}
 BUILD_DIR=${2:-/workspace/rocm-libraries/projects/hipblaslt/tensilelite/mi_tune}
-OUT_ROOT=${3:-/workspace/ml_tuning/baseline_data_infra/tuning_results_104CU}
+OUT_ROOT=${3:-/workspace/ml_tuning/ml_predictor/data_collection/tuning_results_104CU}
 GPU_LIST=${4:-"1 2 3"}  # can be changed to "0 1 2 3" later
 
 TENSILE_BIN=${BUILD_DIR}/Tensile.sh

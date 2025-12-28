@@ -255,7 +255,7 @@ class TensileOptimizerPerProblem:
                 f.write(f"  Prediction time: {r['prediction_time']:.4f}s\n")
                 f.write(f"  Output file: {r['output_file']}\n\n")
         
-        print(f"\n✓ Summary report saved: {report_path}")
+        print(f"\n Summary report saved: {report_path}")
 
 
 def main():

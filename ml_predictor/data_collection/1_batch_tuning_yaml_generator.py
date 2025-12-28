@@ -12,8 +12,8 @@ Features:
 
 Example:
     python 1_batch_tuning_yaml_generator.py \
-        --csv baseline_data_infra/problem_sizes_104CU.csv \
-        --template ../tuning_yaml/gemm_fp16_only_mi.yaml \
+        --csv data_collection/problem_sizes_104CU.csv \
+        --template ../../tuning_yaml/gemm_fp16_only_mi.yaml \
         --batch-size 200 \
         --out-dir tuning_batches_104CU \
         --num-devices 4 \
