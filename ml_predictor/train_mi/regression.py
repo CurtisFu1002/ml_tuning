@@ -13,12 +13,14 @@ import sys
 DATA_SOURCE_MODE = 'separate_files'  # Options: 'single_split', 'separate_files'
 
 # Mode 1: Single CSV (Split into Train/Valid/Test)
-CSV_PATH = 'gflops_data_64.csv'
+CSV_PATH = '../dataset/G3_step128_shift64.csv'
 
 # Mode 2: Separate CSVs
-TRAIN_CSV_PATH = 'gflops_data_64.csv'
-VALID_CSV_PATH = 'gflops_data_output_256.csv'   # None  # If None, split from Train. If path string, load as Valid.
-TEST_CSV_PATH = 'gflops_data_256_and_128.csv'
+TRAIN_CSV_PATH = '../dataset/G3_step128_shift64.csv'
+VALID_CSV_PATH = '../dataset/G3_step128_shift64.csv'   # None  # If None, split from Train. If path string, load as Valid.
+TEST_CSV_PATH = '../dataset/G3_step128_shift64.csv'
+
+
 
 # --- Model & Logging Configuration ---
 MODEL_PATH = 'gflops_final_full.xgb'
@@ -60,6 +62,10 @@ XGB_PARAMS = {
     'tree_method': 'hist',
     'seed': RANDOM_STATE
 }
+
+
+NUM_BOOST_ROUND = 800
+VALID_PERIOD = 50
 
 # ====================== Logger ======================
 class Logger:
@@ -649,12 +655,12 @@ if __name__ == "__main__":
     bst = xgb.train(
         XGB_PARAMS,
         dtrain,
-        num_boost_round=500,
+        num_boost_round=NUM_BOOST_ROUND,
         evals=[(dtrain,'train'), (dvalid,'valid')],
         early_stopping_rounds=400,
-        callbacks=[ValidRankingMetrics(valid_df, unique_mi_configs, period=50)],
+        callbacks=[ValidRankingMetrics(valid_df, unique_mi_configs, period=VALID_PERIOD)],
         # callbacks=[ValidRankingMetrics(test_df, unique_mi_configs, period=50)],
-        verbose_eval=50
+        verbose_eval=VALID_PERIOD
     )
 
     print("\nstart evaluation")
