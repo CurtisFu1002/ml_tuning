@@ -261,11 +261,11 @@ Merging G1 (Po2 aligned) and G2 (Shifted) creates a dataset with **conflicting h
 
 
 
-## 6.4. MI Data Distribution Analysis
+### 6.4. MI Data Distribution Analysis
 
 By systematically analyzing the distribution of "Top-1 MI Configurations" (the winning kernels) across different datasets, we can identify the fundamental reasons behind the performance disparities observed in our experiments.
 
-### 6.4.1. Signal Concentration vs. Entropy
+#### 6.4.1. Signal Concentration vs. Entropy
 The "learnability" of a dataset is heavily influenced by the consistency of its labels. We analyzed how many distinct MI configurations appeared as the optimal choice ("Unique Winners") and the frequency of the most dominant configuration.
 
 | Dataset | Unique Winners | Top Winner | Top Winner Freq. | Signal Quality |
@@ -280,13 +280,13 @@ The "learnability" of a dataset is heavily influenced by the consistency of its 
 * **Strong Signal Stability (Group 3)**: As visualized in the histogram (Top-Left of Figure 4.1), Group 3 reveals a highly stable hardware preference. [cite_start]MI configuration **#95** wins in nearly **30%** of all test cases[cite: 168]. This high concentration creates a "strong signal," allowing the XGBoost model to quickly identify these "star configurations."
 * **The Entropy Trap (Group 1 & 2)**: In contrast, the coarse-grid datasets show a much flatter distribution. [cite_start]The optimal kernel changes rapidly between the sparse grid points, resulting in over 60 different unique winners[cite: 189, 211]. This creates a "noisy" label space with high entropy, forcing the model to memorize individual points rather than learning a coherent physical rule.
 
-### 4.2. Structural Patterns & Horizontal Banding
+#### 6.4.2. Structural Patterns & Horizontal Banding
 The scatter plots of "Matrix Size vs. Optimal MI" provide visual proof of the data quality difference.
 
 * **Horizontal Banding (Group 3)**: In Group 3, we observe clear **horizontal lines**, indicating that specific MI configurations (like #95) remain optimal across a huge range of matrix dimensions ($m \times n$).
 * **Fragmentation (Group 1 & 2)**: The coarse grids show scattered, fragmented points. The "winning" MI jumps unpredictably, likely because the coarse step size (256) causes the grid points to land inconsistently relative to hardware boundaries.
 
-### 4.3. The Coarse Conflict: Why G1+G2 Failed
+#### 6.4.3. The Coarse Conflict: Why G1+G2 Failed
 We specifically analyzed why merging two coarse datasets (G1 + G2) failed to improve performance, despite doubling the data volume.
 
 ![MI Frequency Line Chart (Coarse)](./images/MI_distribution_G1G2_G1_G2.png)
@@ -300,7 +300,7 @@ We specifically analyzed why merging two coarse datasets (G1 + G2) failed to imp
     * Although both datasets use Step=256, the **Shift=128** in Group 2 pushes the grid points into a different hardware regime (likely misaligned with L2 cache banks).
     * As a result, for similar matrix sizes, G1 says "Kernel A is best" while G2 says "Kernel B is best." Merging them (Green Dashed Line) creates an average distribution that dilutes the few strong signals G1 had, leading to the **performance drop** observed in Section 3.3.
 
-### 4.4. Conflicting Signals in Fine vs. Coarse Merging
+#### 6.4.4. Conflicting Signals in Fine vs. Coarse Merging
 Finally, the conflict is even more pronounced when merging Fine (G3) and Coarse (G1).
 
 * [cite_start]**Group 3 Dominance**: Block M=32 is dominant (94.1%) with **WaveTile 2x6** (MI #95)[cite: 169].
