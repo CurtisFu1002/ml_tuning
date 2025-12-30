@@ -52,6 +52,12 @@ cmake -DTENSILE_BIN=Tensile -DDEVELOP_MODE=ON -S . -B mi_tune
 ```
 more details of docker usage can be found at confluence.
 
+- python version = 3.10
+- other required package is in requirements.txt
+```
+pip install -r requirements.txt
+```
+
 ## Step-by-Step Guide
 
 ### 0. Generate Problem Sizes
