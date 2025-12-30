@@ -40,9 +40,9 @@ The datasets differ only in **grid step size** and **shift**:
 
 | Group       | File name                        | Step size | Shift | First m/n value | Points per dimension | Total problems | Notes                          |
 |-------------|----------------------------------|-----------|-------|-----------------|----------------------|----------------|--------------------------------|
-| Group 1     | gflops_data_output_256.csv       | 256       | 0     | 512             | 31                   | 961            | Coarse, starts at 512          |
-| Group 2     | gflops_data_output_128.csv       | 256       | 128   | 640             | 30                   | 900            | Coarse, shifted by 128         |
-| Group 3     | gflops_data_64.csv               | 128       | 64    | 576             | 60                   | 3600           | Fine-grained, ~4× denser       |
+| Group 1     | G1_step256_shift0.csv       | 256       | 0     | 512             | 31                   | 961            | Coarse, starts at 512          |
+| Group 2     | G2_step256_shift128.csv       | 256       | 128   | 640             | 30                   | 900            | Coarse, shifted by 128         |
+| Group 3     | G3_step128_shift64.csv               | 128       | 64    | 576             | 60                   | 3600           | Fine-grained, ~4× denser       |
 
 
 
