@@ -154,8 +154,10 @@ Note that all the fields in the output logic yaml (in the example) should remain
 """
 
 
-def create_prompts(version: str, config: str, gpu_spec: str, logic: str | None = None) -> list[Message]:
-    """Create a list of messages for LLM interaction."""
+def create_prompts(
+    version: str, config: str, gpu_spec: str, logic_text: str = ""
+) -> list[Message]:
+    print(f"prompt version: {version}")
     match version:
         case "v1":
             user_prompt = get_user_prompt_v1(config, gpu_spec)
