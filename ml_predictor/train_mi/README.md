@@ -1,18 +1,31 @@
 # MI(Matrix Instruction) TensileLite Kernel Performance Prediction using Machine Learning
 
 This project develops a machine learning-based approach to automatically tune the performance of MI (Matrix Instruction) kernels on AMD GPUs, predicting the optimal configuration for GEMM operations based on matrix dimensions (m, n, k=4096) to reduce manual search time.
-## Overview
+## 1. Overview
 
 This project provides a comprehensive pipeline for training and evaluating machine learning models that predict the performance of different MI (Matrix Instruction) kernel configurations for GEMM (General Matrix Multiply) operations. The primary goal is to automate kernel tuning by accurately forecasting GFLOPS for a given matrix size and configuration, thereby reducing the need for exhaustive manual benchmarking.
 
 The model uses **XGBoost Regressor** as the core engine, combined with custom evaluation metrics focused on ranking accuracy and regret. The framework supports feature engineering, hyperparameter tuning, and detailed performance analysis across different data regimes.
 
-Key insights from experiments:
-- Grid density (step size) in the training data is the dominant factor affecting model quality.
-- Fine-grained grids (step=128) produce strong, concentrated performance patterns and yield the best prediction accuracy.
-- Coarse grids (step=256) result in dispersed patterns and significantly harder learning, even when data volume is increased.
+### Executive Summary: Key Experimental Conclusions
+Based on extensive experimentation across different grid densities and dataset combinations, we have established four critical conclusions:
 
-## Dataset Introduction
+1.  **Grid Density is the Decisive Factor**:
+    * **Fine-grained grids (Step=128)** are the threshold for accurate modeling. They reveal consistent, high-concentration performance patterns that allow the model to achieve **97.5% Recall@20**.
+    * **Coarse grids (Step=256)** suffer from high entropy and aliasing, failing to capture the underlying hardware logic even with more data.
+    - more details in [Baseline Analysis](#61baseline-performance-analysis-in-distribution)
+
+2.  **Quality Trumps Quantity (Negative Interference)**:
+    * Contrary to the common belief that "more data is better," we found that merging coarse data with fine data **degrades** performance. The noise from coarse grids dilutes the precise signals from fine grids, reducing Top-1 Accuracy from 40.8% to 26.0%.
+    - more details in [Interference Analysis](#63-data-interference--aggregation-analysis)
+
+3.  **Achieving 6.4x Acceleration**:
+    * By pruning the search space to the **Top-20** candidates, we achieve a **~6.4x speedup** in tuning time. Real-world benchmarking confirms the inference overhead is negligible (**~0.37s** per problem).
+    - more details in [Performence Impact Acceleration](#10-performance-impact--acceleration)
+4.  **Deep Learning Potential and Future Directions**:
+    * The high quality of fine-grid data allows for deeper training (1500 boosting rounds) without overfitting, unlocking an additional **+5% accuracy** gain.
+    - more details in [Ablation Study](#7-ablation-study) and [Future Directions](#9-future-work)
+## 2. Dataset Introduction
 All datasets contain benchmark results for GEMM operations with **k fixed at 4096** and **m, n ranging from 512 to 8192** (inclusive).  
 For each (m, n) problem, **all 128 MI configurations** are evaluated, and the **GFLOPS** is measured after **Tensile tuning**.
 
@@ -43,25 +56,20 @@ Key observation:
 **Group 3 (fine grid)** produces the strongest and most stable performance patterns (highly concentrated top-1 configurations).  
 **Group 1 & Group 2 (coarse grids)** show more dispersed optimal configurations and weaker patterns due to larger step sizes.
 
-## Model Choice
+## 3. Model Choice
 
-We primarily use **XGBoost Regressor** as the baseline model for the following reasons:
+We adopted **XGBoost Regressor** as our baseline model, following the established methodology of the **TVM Cost Model** (AutoTVM). XGBoost has been widely validated in compiler auto-tuning tasks for its efficiency in capturing non-linear performance characteristics on hardware execution data.
 
-- Excellent performance on tabular data with strong non-linear relationships
-- Built-in feature importance analysis for interpretability
-- Fast training, suitable for rapid iteration and ablation studies
-- Proven effective in similar kernel tuning tasks compared to traditional MLPs
-
-Key hyperparameters:
+**Key hyperparameters:**
 - `objective`: `reg:squarederror`
 - `learning_rate`: 0.05
 - `max_depth`: 16
 - `n_estimators`: 500–1000
-- `early_stopping_rounds`: 50 (using validation set)
+- `early_stopping_rounds`: 50
 
 Future extensions can easily incorporate LightGBM or ranking objectives (e.g., LambdaRank).
 
-## Evaluation Metrics
+## 4. Evaluation Metrics
 
 We evaluate model performance per problem (m×n×k) using the following metrics:
 
@@ -76,9 +84,9 @@ All metrics are averaged across problems for fair comparison.
 
 
 
-## Experiment Classification
+## 5. Experiment Classification(Method)
 
-### 1. Baseline Performance (In-Distribution)
+### 5.1. Baseline Performance (In-Distribution)
 
 Objective: Establish a reference point for how well the model performs when the training and testing data come from the same grid density and shift.
 
@@ -86,7 +94,7 @@ Objective: Establish a reference point for how well the model performs when the 
 
 Key Question: How does grid density (Step 128 vs 256) affect the upper bound of model accuracy
 
-### 2. Generalization & Zero-Shot Capabilities (Out-of-Distribution)
+### 5.2. Generalization & Zero-Shot Capabilities (Out-of-Distribution)
 
 Objective: Test if the model can predict performance on "unseen" problem sizes (different grid points or shifts).
 
@@ -95,7 +103,9 @@ Objective: Test if the model can predict performance on "unseen" problem sizes (
 
 2. Cross-Step Interpolation: Train G3 → Test G1/G2. (Does a fine grid "cover" the knowledge of coarse grids?)
 
-### 3. Data Interference & Aggregation Analysis
+3. Mixed Data Training
+
+### 5.3. Data Interference & Aggregation Analysis
 
 Objective: Challenge the "more data is better" assumption and identify if coarse data acts as "noise."
 
@@ -104,9 +114,9 @@ Negative Interference: G1 + G2 vs G1 only. (Why does adding G2 data degrade G1 p
 Signal Dilution: G1 + G3 vs G3 only. (Does coarse data interfere with the stable patterns found in G3?)
 
 
-## Results
+## 6. Results
 
-### 1.Baseline Performance Analysis (In-Distribution)
+### 6.1.Baseline Performance Analysis (In-Distribution)
 This analysis establishes the reference performance of the XGBoost model when trained and tested on the same grid density and shift configurations. This "In-Distribution" test reveals the upper-bound predictive capability of the model under consistent environmental conditions.
 
 **Objective**
@@ -115,7 +125,7 @@ The primary goal of this section is to establish the "upper bound" of model perf
 **Experiment Setup**
 We trained three separate XGBoost models on Group 1, Group 2, and Group 3 respectively, using an 80/10/10 split for Training, Validation, and Testing.
 
-#### 1.1. Quantitative ResultsPerformance Metrics Comparison Table
+#### 6.1.1. Quantitative ResultsPerformance Metrics Comparison Table
 Test on Xgboost model with 800 boostround
 | Metric | **Group 1** (Step 256, Shift 0) | **Group 2** (Step 256, Shift 128) | **Group 3** (Step 128, Shift 64) |
 | :--- | :---: | :---: | :---: |
@@ -128,7 +138,7 @@ Test on Xgboost model with 800 boostround
 
 > **Key Observation**: Group 3 (Fine Grid) significantly outperforms the Coarse Grids across all metrics.
 
-#### 1.2. Prediction Accuracy & Error
+#### 6.1.2. Prediction Accuracy & Error
 First, we analyze the absolute prediction error. As shown in **Figure 1**, Group 3 achieves a significantly lower Mean Relative Error (MRE).
 
 ![MRE Comparison](./images/mre_comparison_test.png)
@@ -139,7 +149,7 @@ First, we analyze the absolute prediction error. As shown in **Figure 1**, Group
 
 ---
 
-#### 1.3. Ranking Capability & Auto-Tuning Acceleration
+#### 6.1.3. Ranking Capability & Auto-Tuning Acceleration
 For practical auto-tuning, the absolute GFLOPS value is less important than the **ranking order**. We focus on **Recall@k** (probability of finding the true best kernel in the top-k) to validate our pruning strategy.
 
 ![Recall Comparison](./images/recall_comparison_line.png)
@@ -155,7 +165,7 @@ For practical auto-tuning, the absolute GFLOPS value is less important than the 
 
 ---
 
-#### 1.4. Learning Dynamics & Stability
+#### 6.1.4. Learning Dynamics & Stability
 Finally, we examine the training process to ensure the performance is due to robust learning rather than memorization.
 
 ![Training Curves](./images/training_curves_comparison.png)
@@ -168,12 +178,12 @@ Finally, we examine the training process to ensure the performance is due to rob
 * **Elite Pool Reliability**: Figure 5 demonstrates that Group 3 predicts the GFLOPS of the *entire* top-5 elite pool with high precision. The cumulative error for the Top-5 predictions in Group 3 is significantly lower than the Top-1 error of Group 1.
 
 
-### 2. Generalization & Robustness (Out-of-Distribution)
+### 6.2. Generalization & Robustness (Out-of-Distribution)
 
 **Objective**
 In real-world scenarios, the auto-tuner may encounter matrix dimensions that were not explicitly part of the training set. This section evaluates the model's **zero-shot generalization** capability by testing how well knowledge transfers across different grid densities and hardware alignments.
 
-#### 2.1. Cross-Shift Generalization (The Alignment Challenge)
+#### 6.2.1. Cross-Shift Generalization (The Alignment Challenge)
 We tested whether a model trained on **Shift 0** (Group 1, Aligned) could predict performance on the difficult **Shift 128** dataset (Group 2, Non-aligned).
 
 * **Source**: Train on G1 (Step 256, Shift 0).
@@ -189,7 +199,7 @@ We tested whether a model trained on **Shift 0** (Group 1, Aligned) could predic
 2.  **The Limits of Generalization**: However, the absolute performance remains limited. The **Top-1 Accuracy for both models is low (<8%)**, and the Mean Regret remains high (~29%). This confirms that the **Shift 128** domain contains complex, non-linear hardware behaviors (likely due to cache conflicts at non-aligned boundaries) that are difficult to pinpoint precisely without direct training data.
 3.  **Trade-off**: While G3 does not perfectly solve the zero-shot accuracy problem, its higher Recall makes it a **safer choice for pruning** than G1, as it is less likely to discard the true best kernel entirely.
 
-#### 2.2. Cross-Step Generalization (Fine-to-Coarse Transfer)
+#### 6.2.2. Cross-Step Generalization (Fine-to-Coarse Transfer)
 We evaluated whether the fine-grained model (G3) could serve as a "universal" predictor for coarse grids (G1 + G2).
 
 * **Source**: Train on G3 (Step 128).
@@ -204,7 +214,7 @@ While G3 provides decent ranking capability (Recall@20 = 76.5%), the extremely h
 
 ---
 
-### 3. Data Interference & Aggregation Analysis
+### 6.3. Data Interference & Aggregation Analysis
 
 **Objective**
 A common assumption in machine learning is "more data = better performance." We challenge this by analyzing whether merging coarse and fine datasets improves or degrades accuracy.
@@ -222,7 +232,7 @@ A common assumption in machine learning is "more data = better performance." We 
 * **Ranking Degradation**: Even for Recall@20, which is generally more robust, we observe a significant decline from **97.5% (G3 Only)** to **90.3% (All Combined)**.
 * **Interference Confirmed**: This proves that merging datasets does not "average out" the noise; instead, the conflicting hardware patterns from the coarse grids (G1/G2) degrade the model's ability to consistently rank the true best kernel in the top tier.
 
-#### 3.1. Impact of Merging Datasets
+#### 6.3.1. Impact of Merging Datasets
 We compared models trained on single sources versus merged sources to identify signal interference. We tested two scenarios: adding G1 to G3 (testing on G2), and adding G2 to G3 (testing on G1).
 
 | Training Set | Test Target | Top-1 Accuracy | Recall@20 | Regret | Status |
@@ -238,7 +248,7 @@ We compared models trained on single sources versus merged sources to identify s
 * **Mixed Noise**: Similarly, adding G2 to G3 when testing on G1 slightly improved Recall@20 but **degraded** Top-1 Accuracy and increased Regret.
 * **Conclusion**: The high-quality, concentrated signal from G3 is "diluted" by the noisy, high-entropy signal from the coarse grids. This proves that **data quality (density) trumps data quantity**.
 
-#### 3.2. The Failure of Coarse Merging (G1+G2)
+#### 6.3.2. The Failure of Coarse Merging (G1+G2)
 Merging two coarse datasets (G1 + G2) also failed to produce a robust model.
 
 * **Experiment**: Train G1+G2 $\to$ Test G1+G2 (Internal Split).
@@ -251,11 +261,11 @@ Merging G1 (Po2 aligned) and G2 (Shifted) creates a dataset with **conflicting h
 
 
 
-## 4. MI Data Distribution Analysis
+## 6.4. MI Data Distribution Analysis
 
 By systematically analyzing the distribution of "Top-1 MI Configurations" (the winning kernels) across different datasets, we can identify the fundamental reasons behind the performance disparities observed in our experiments.
 
-### 4.1. Signal Concentration vs. Entropy
+### 6.4.1. Signal Concentration vs. Entropy
 The "learnability" of a dataset is heavily influenced by the consistency of its labels. We analyzed how many distinct MI configurations appeared as the optimal choice ("Unique Winners") and the frequency of the most dominant configuration.
 
 | Dataset | Unique Winners | Top Winner | Top Winner Freq. | Signal Quality |
@@ -279,7 +289,7 @@ The scatter plots of "Matrix Size vs. Optimal MI" provide visual proof of the da
 ### 4.3. The Coarse Conflict: Why G1+G2 Failed
 We specifically analyzed why merging two coarse datasets (G1 + G2) failed to improve performance, despite doubling the data volume.
 
-![MI Frequency Line Chart (Coarse)](./images/MI_distribution_G1G2_G1_G2.jpg)
+![MI Frequency Line Chart (Coarse)](./images/MI_distribution_G1G2_G1_G2.png)
 *Figure 4.2: Frequency of Top-1 MI in Coarse Datasets. Note the misalignment of peaks between G1 (Blue) and G2 (Orange).*
 
 **Analysis of Conflict:**
@@ -296,13 +306,13 @@ Finally, the conflict is even more pronounced when merging Fine (G3) and Coarse 
 * [cite_start]**Group 3 Dominance**: Block M=32 is dominant (94.1%) with **WaveTile 2x6** (MI #95)[cite: 169].
 * [cite_start]**Group 1 Dominance**: Block M=32 is less dominant (58.8%) with **WaveTile 2x7** (MI #45)[cite: 210].
 
-![MI Frequency Line Chart (Fine vs Coarse)](./images/MI_distribution_G1G2_G3_All.jpg)
+![MI Frequency Line Chart (Fine vs Coarse)](./images/MI_distribution_G1G2_G3_All.png)
 *Figure 4.3: Frequency of each MI being Top-1 (%). Note the sharp peak for MI #95 in Group 3 (Orange line) versus the conflicting peak for MI #45 in the Merged dataset (Blue dashed line).*
 
 **Conclusion on Interference:**
 When these datasets are merged, the model receives conflicting signals: "Is the best tile 2x6 or 2x7?" This ambiguity dilutes the strong signal from G3, leading to **Negative Interference**.
 
-## Ablation Study
+## 7. Ablation Study
 
 To better understand the factors contributing to model performance, we conducted a series of ablation experiments focusing on generalization types and training intensity.
 
@@ -325,7 +335,7 @@ We investigated whether the Fine-Grid model (Group 3) had reached its capacity. 
 ---
 
 
-## Conclusion & Impact
+## 8. Conclusion & Impact
 
 1.  **Grid Density is the Primary Driver**: Our results prove that a step size of 128 is the critical threshold for accurate performance modeling on this architecture. It transforms the tuning problem from a noisy, high-entropy search into a high-precision ranking task.
 2.  **Achieving 6.4x Acceleration**: By leveraging the model's ability to identify the "Elite Candidate Pool" (with **97.5% Recall@20**), we can safely prune over 80% of the configuration space. This reduces the tuning overhead from an exhaustive search of 128 kernels down to just 20 candidates, achieving a **~6.4x speedup** with negligible performance loss.
@@ -334,7 +344,7 @@ We investigated whether the Fine-Grid model (Group 3) had reached its capacity. 
     * **L2 Cache Analysis**: Investigate the specific impact of L2 cache bank aliasing and Power-of-Two boundaries on the non-linear performance drops observed in the shifted datasets.
 
 
-## Future Work
+## 9. Future Work
 
 Our findings have opened up several exciting directions. To further push the limits of prediction accuracy and practical utility, we plan to focus on the following key areas:
 
@@ -358,7 +368,7 @@ Our findings have opened up several exciting directions. To further push the lim
 
 
 
-## 6. Performance Impact & Acceleration
+## 10. Performance Impact & Acceleration
 
 ### 6.1. Theoretical Complexity Reduction
 The original Tensile auto-tuning process performs an exhaustive search over the full configuration space. For a single GEMM problem size $(m, n, k)$, the baseline complexity is $O(\#problems \times 128)$.
