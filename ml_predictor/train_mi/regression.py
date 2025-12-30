@@ -98,6 +98,7 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
         true_best_ranks = []
         topk_contains = {k: 0 for k in TOP_K_VALUES}
         total_problems = 0
+        real_top_errors = {i: [] for i in [1,2,3,4,5]}
 
         # Metrics for Real Top-k
 
@@ -130,12 +131,11 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
             true_best_ranks.append(true_rank)
 
             # Top-k Recall
-            for k in TOP_K_VALUES:
-                if true_best_mi in pred_mi_list[:k]:
-                    topk_contains[k] += 1
-            
-            real_top_errors = {k: [] for k in [1,2,3,4,5]}
-        
+            for tpk in TOP_K_VALUES:
+                if true_best_mi in pred_mi_list[:tpk]:
+                    topk_contains[tpk] += 1
+
+
         for (m, n, k), group in self.valid_df.groupby(['m','n','k']):
             # ground truth ranking
             true_sorted = group.sort_values('gflops', ascending=False)
@@ -152,22 +152,22 @@ class ValidRankingMetrics(xgb.callback.TrainingCallback):
                          for i in range(len(self.unique_mi_configs))}
             
             # Real Top-1~5  M scrivere
-            for k in [1,2,3,4,5]:
-                if len(true_mi_list) >= k:
-                    for i in range(k):
+            for rtk in [1,2,3,4,5]:
+                if len(true_mi_list) >= rtk:
+                    for i in range(rtk):
                         mi = true_mi_list[i]
                         true_val = true_gflops_list[i]
                         pred_val = mi_to_pred.get(mi, 0)
                         mre = abs(pred_val - true_val) / true_val if true_val > 0 else 0
-                        real_top_errors[k].append(mre)
+                        real_top_errors[rtk].append(mre)
 
         print("  RealTopErr →", end="")
-        for k in [1,2,3,4,5]:
-            if real_top_errors[k]:
-                avg_mre = np.mean(real_top_errors[k])
-                print(f" T{k}:{avg_mre:5.1%}", end="")
+        for rtk in [1,2,3,4,5]:
+            if real_top_errors[rtk]:
+                avg_mre = np.mean(real_top_errors[rtk])
+                print(f" T{rtk}:{avg_mre:5.1%}", end="")
             else:
-                print(f" T{k}:  N/A ", end="")
+                print(f" T{rtk}:  N/A ", end="")
         print("  |", end="")
 
         top1_acc = top1_correct / total_problems
