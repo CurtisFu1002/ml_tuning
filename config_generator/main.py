@@ -1,17 +1,24 @@
 import csv
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 from typing_extensions import Annotated
 
+import numpy as np
+import pandas as pd
 import typer
 import yaml
 from Tensile import Tensile
 
-from config_generator.llm import get_llm_response, get_llm_response_parsed
+from config_generator.llm import get_llm_response, get_llm_response_parsed, call_llm
 from config_generator.prompts.gpu_spec import GPU_SPEC_INFO
-from config_generator.prompts.template import get_user_prompt_v1, get_user_prompt_v2
+from config_generator.prompts.template import (
+    get_user_prompt_v1,
+    get_user_prompt_v2,
+    create_prompts,
+)
 from config_generator.utils import extract_yaml, write_output_files
 
 app = typer.Typer()
@@ -305,9 +312,7 @@ def autotune(
 
         print("[Validation Result]")
         if valid:
-            print(
-                "Success: LLM-integrated tuning matches Tensile-only tuning."
-            )
+            print("Success: LLM-integrated tuning matches Tensile-only tuning.")
         else:
             print(
                 "Failed: Results differ between LLM-integrated and Tensile-only tuning."
@@ -320,6 +325,215 @@ def autotune(
     if validate:
         print("\n[Timing Summary (Baseline)]")
         print(f"Tensile tuning time: {time_baseline:.2f} seconds")
+
+
+@app.command()
+def evaluate(
+    config_yaml: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the kernel parameter config YAML to use",
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to conduct benchmark and write LLM-generated config YAML and Tensile-generated output files",
+        ),
+    ],
+    num_runs: Annotated[
+        int,
+        typer.Option(
+            "--num-runs",
+            help="Number of times to run the evaluation",
+        ),
+    ] = 1,
+    version: Annotated[str, typer.Option(help="Version of prompt strategies")] = "v1_3",
+    model_name: Annotated[str, typer.Option("--model")] = "gpt-oss:120b",
+    gpu_name: Annotated[str, typer.Option("--gpu")] = "MI210",
+    prebuilt_client: Annotated[
+        Path,
+        typer.Option(
+            help="Specify the full path to a pre-built tensilelite-client executable",
+        ),
+    ] = "/mnt/rocm-libraries/projects/hipblaslt/tensilelite/build_tmp/tensilelite/client/tensilelite-client",
+) -> None:
+    """
+    Evaluate LLM-guided kernel tuning with quantitative metrics.
+
+    This command runs a baseline Tensile benchmark followed by multiple LLM-guided
+    tuning iterations. It computes the following evaluation metrics for each run:
+
+    Metrics:
+
+        - Tuning Time Reduction (TR): Net time savings compared to baseline,
+          calculated as (T_baseline - (T_llm + T_tensile)) / T_baseline
+
+        - Performance Retention (PR): Ratio of optimized to baseline GFLOPS,
+          calculated as max_perf_optimized / max_perf_baseline
+
+        - Winner Consistency (WC): Whether the LLM-optimized config produces
+          the same winning kernel as the baseline
+
+
+    Outputs:
+
+        - <output_dir>/baseline/: Baseline Tensile benchmark results
+
+        - <output_dir>/run_<n>/: Results for each LLM-guided run
+
+        - <output_dir>/evaluation_summary.csv: Aggregated metrics across all runs
+    """
+
+    # Read input files
+    config_file = Path(config_yaml).absolute()
+    config_text = config_file.read_text()
+    gpu_spec = GPU_SPEC_INFO[gpu_name]
+
+    # Run baseline Tensile benchmark
+    t = time.time()
+    Tensile.Tensile(
+        [
+            f"--prebuilt-client={prebuilt_client}",
+            str(config_file),
+            str(output_dir / "baseline"),
+        ]
+    )
+    time_baseline = time.time() - t
+    shutil.copy2(config_file, output_dir / "baseline" / config_file.name)
+
+    FILENAME = "2_BenchmarkData/Cijk_Ailk_Bljk_HHS_BH_Bias_UserArgs_00_CSVWinner.csv"
+    df_baseline = pd.read_csv(output_dir / "baseline" / FILENAME)
+    perf_baseline: np.float64 = df_baseline[" WinnerGFlops"].values[0]
+    winner_baseline: str = df_baseline[" WinnerName"].values[0]
+
+    df = pd.DataFrame(
+        columns=[
+            "Run",
+            "Baseline Time (s)",
+            "LLM Time (s)",
+            "Tensile Time (s)",
+            "Tuning Time Reduction",
+            "Performance Retention",
+            "Winner Matched",
+        ]
+    )
+
+    # Run multiple evaluation runs
+    for run_idx in range(num_runs):
+        print(f"\n[Run {run_idx + 1}/{num_runs}]")
+
+        # Generate output
+        t = time.time()
+        prompts = create_prompts(version, config_text, gpu_spec)
+        response = call_llm(model_name, prompts)
+        yaml_content = yaml.safe_dump(response, sort_keys=False)
+        time_llm = time.time() - t
+        prompt = prompts[-1]["content"]
+
+        # Write output files
+        output_path = (output_dir / f"run_{run_idx + 1}").absolute()
+        generated_file = output_path / "modified.yaml"
+        write_output_files(generated_file, prompt, str(response), yaml_content)
+
+        # Run Tensile with generated config
+        t = time.time()
+        Tensile.Tensile(
+            [
+                f"--prebuilt-client={prebuilt_client}",
+                str(generated_file),
+                str(generated_file.parent),
+            ]
+        )
+        time_tensile = time.time() - t
+
+        # Calculate tuning time reduction
+        tuning_time_reduction: float = (
+            time_baseline - (time_llm + time_tensile)
+        ) / time_baseline
+
+        # Read benchmark results from CSV
+        df_optimized = pd.read_csv(output_path / FILENAME)
+        perf_optimized: np.float64 = df_optimized[" WinnerGFlops"].values[0]
+        winner_optimized: str = df_optimized[" WinnerName"].values[0]
+
+        # Calculate performance retention
+        performance_retension: float = (
+            perf_optimized / perf_baseline if perf_baseline != 0 else 0
+        )
+
+        # Check if winners matched
+        winner_matched: bool = winner_optimized == winner_baseline
+
+        df.loc[run_idx] = [
+            run_idx + 1,
+            round(time_baseline, 2),
+            round(time_llm, 2),
+            round(time_tensile, 2),
+            round(tuning_time_reduction, 4),
+            round(performance_retension, 4),
+            winner_matched,
+        ]
+        winner_consistency = df["Winner Matched"].mean()
+
+        print("\n[Evaluation Summary]")
+        print(df.to_string(index=False))  # type: ignore
+        print(f"Winner Consistency = {winner_consistency}")
+
+        df.to_csv(output_dir / "evaluation_summary.csv", index=False)
+        df.to_markdown(output_dir / "evaluation_summary.md", index=False)
+        md_file = Path(output_dir / "evaluation_summary.md")
+        md_file.write_text(
+            "# Evaluation Summary\n\n"
+            + md_file.read_text()
+            + f"\n\nWinner Consistency = {winner_consistency}\n"
+        )
+
+
+@app.command()
+def find_winner(
+    benchmark_csv: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the benchmark CSV file to analyze",
+        ),
+    ],
+    benchmark_yaml: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the benchmark YAML file to analyze",
+        ),
+    ],
+    index: Annotated[
+        int,
+        typer.Option(
+            help="Index of kernel",
+        ),
+    ] = 0,
+) -> None:
+    """
+    Find the winning kernel configuration from a Tensile benchmark CSV file.
+    """
+    def get_problem_size(d: dict[str, Any]) -> list[int]:
+        return d.get("Exact")[:4]
+
+    def get_matrix_inst(d: dict[str, Any]) -> list[int]:
+        return [
+            *d.get("MatrixInstruction"),
+            d.get("MIBlock")[-2],
+            *d.get("MIWaveTile"),
+            *d.get("MIWaveGroup"),
+        ]
+
+    df = pd.read_csv(benchmark_csv)
+    winner_indices: list[int] = [int(i) for i in df[" WinnerIdx"].values]
+    print(f"Winning Index: {winner_indices[index]}")
+
+    logics = yaml.safe_load(Path(benchmark_yaml).read_text())
+    problem_size = get_problem_size(logics[1].get("ProblemSizes")[index])
+    matrix_instruction = get_matrix_inst(logics[4:][index])
+    print(f"ProblemSize: {problem_size}")
+    print(f"MatrixInstruction: {matrix_instruction}")
 
 
 if __name__ == "__main__":
