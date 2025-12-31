@@ -1,0 +1,6 @@
+logs/
+
+models/
+
+# Python cache
+__pycache__/
